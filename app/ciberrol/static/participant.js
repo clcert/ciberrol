@@ -76,8 +76,9 @@ function proposeHtml(d) {
   const c = d.card;
   return `<div class="card" style="${cssVars(c)}">
     <div class="card-head"><span>${c.emoji}</span><span>¡Te toca proponer!</span><span class="count">${timerHtml(d.deadline)}</span></div>
-    ${c.text ? `<div class="card-text small">${esc(c.text)}</div>` : ""}
-    <label for="proposal" class="question" style="color:inherit">${c.question ? `❓ ${esc(c.question)}` : "¿Qué pasos propones seguir?"}</label>
+    ${c.text ? `<div class="card-text small md">${md(c.text)}</div>` : ""}
+    ${questionHtml(c.question)}
+    <label for="proposal" class="question" style="color:inherit">${c.question ? "Tu propuesta" : "¿Qué pasos propones seguir?"}</label>
     <textarea id="proposal" maxlength="400" placeholder="Escribe tu propuesta…">${esc(d.my_proposal.text)}</textarea>
     <div class="row-between"><span class="muted-ink" id="chars"></span>
       <button class="btn-primary" id="send">Enviar propuesta</button></div>
@@ -124,12 +125,12 @@ function render(d) {
       ? contextCardHtml(d.context) + `<div style="height:10px"></div>` : "";
     html += ctx;
     if (d.step === "texts") {
-      html += cardOpen(esc(c.name)) + `<div class="card-text">${esc(c.text) || "<span class='empty'>(sin texto)</span>"}</div>${questionHtml(c.question)}</div>`;
+      html += cardOpen(esc(c.name)) + `<div class="card-text md">${md(c.text) || "<span class='empty'>(sin texto)</span>"}</div>${questionHtml(c.question)}</div>`;
     } else if (d.step === "propose") {
       if (proposing) {
         html += proposeHtml(d);
       } else {
-        html += cardOpen(esc(c.name), timerHtml(d.deadline)) + `<div class="card-text small">${esc(c.text)}</div>${questionHtml(c.question)}`;
+        html += cardOpen(esc(c.name), timerHtml(d.deadline)) + `<div class="card-text small md">${md(c.text)}</div>${questionHtml(c.question)}`;
         if (d.is_proposer) html += `<p class="note-ink">✅ Propuesta enviada:</p><div class="quote">${esc(d.my_proposal.text) || "(vacía)"}</div>`;
         else html += `<p class="note-ink">${d.proposers.length ? `Están proponiendo: <b>${d.proposers.map(esc).join(", ")}</b>`
           : d.n_proposers ? `${plural(d.n_proposers, "persona de tu rol está", "personas de tu rol están")} proponiendo.` : "Nadie de tu rol está proponiendo."}</p>`;

@@ -270,3 +270,21 @@ body.present .board-grid > .card { min-height: 0; }
 label.question { display: block; font-size: 1rem; margin: .8em 0 .35em; }
 .results-stack { display: grid; gap: 10px; }
 .results-stack .card { min-height: 0; }
+
+/* markdown básico en diapositivas */
+.md { white-space: normal; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 .5em; }
+.md ul, .md ol { margin: .2em 0 .5em; padding-left: 1.3em; }
+.md li { margin: .1em 0; }
+.md h3, .md h4, .md h5 { margin: .3em 0 .3em; line-height: 1.2; }
+.md h3 { font-size: 1.25em; } .md h4 { font-size: 1.1em; } .md h5 { font-size: 1em; }
+.md code { background: rgba(0,0,0,.22); padding: .05em .35em; border-radius: 5px; font-size: .9em; }
+.md a { color: inherit; text-decoration: underline; }
+.question.md > :first-child::before { content: "❓ "; }
+
+/* presentación con contextos separados: solo el contexto general, grande */
+.board-grid.context-only { grid-template-rows: auto; }
+body.present .board-grid.context-only { grid-template-rows: minmax(55vh, auto); }
+body.present .context-only .card-context { font-size: clamp(1.2rem, 2.3vw, 2.6rem); padding: 2.2vh 2.4vw; }

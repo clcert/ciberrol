@@ -45,6 +45,9 @@ los teléfonos. Es la que se muestra en el QR. Si está vacía se usa la direcci
 
 ## Flujo de una actividad
 
+Los textos de las diapositivas (contexto, escenarios y preguntas) admiten markdown básico: `**negrita**`,
+`*cursiva*`, `` `código` ``, listas (`- ` o `1. `), títulos (`# `) y enlaces `[texto](https://…)`.
+
 1. El admin crea la actividad (obtiene un código corto) y sus diapositivas en las fases
    **Preparar → Contener → Mitigar → Recuperar → Evaluar**. Cada diapositiva tiene un contexto general y, por rol, un escenario, una pregunta
    (se muestra bajo el escenario) y un indicador 0–100; el número de alternativas (por defecto 3) y los tiempos para proponer y votar (por defecto 60 s).
@@ -64,7 +67,8 @@ los teléfonos. Es la que se muestra en el QR. Si está vacía se usa la direcci
    su alternativa ganó (empates cuentan), votó y no votó (podía y no lo hizo).
 
 **Contextos separados** (activado por defecto): la presentación muestra solo el contexto general y los
-teléfonos solo el escenario de su rol. Desactivado, la presentación muestra los 5 textos y los teléfonos también
+teléfonos solo el escenario de su rol. En los pasos 1 y 2 la presentación muestra únicamente el contexto general a
+pantalla completa (sin las 4 tarjetas); en propuestas, votación y resultados las tarjetas vuelven a aparecer. Desactivado, la presentación muestra los 5 textos y los teléfonos también
 el contexto general. Se elige al crear la actividad y se cambia desde el panel; el panel del admin ve todo.
 
 **Nombres de quienes proponen:** por defecto, la presentación y los teléfonos no muestran quién escribió

@@ -5,6 +5,7 @@
 <main class="wrap">
   <form method="post" action="{{ '/admin/a/%d/slides/%d' % (act.id, slide.id) if slide else '/admin/a/%d/slides' % act.id }}">
     <section class="panel">
+      <p class="muted small" style="float:right;margin:0">Los textos admiten markdown básico: **negrita**, *cursiva*, `código`, listas con «- » o «1. », títulos con «# » y [enlaces](https://…)</p>
       <h2>{{ 'Editar' if slide else 'Nueva' }} diapositiva <span class="muted small">· {{ act.name }}</span></h2>
       <div class="grid2">
         <div>

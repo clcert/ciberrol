@@ -79,8 +79,49 @@ function proposersHtml(proposers) {
     `<span class="chip ${p.submitted ? "ok" : ""}">${esc(p.name)}${p.submitted ? " ✓" : ""}</span>`).join(" ")}</div>`;
 }
 
+// Markdown básico y seguro: se escapa el HTML primero y luego se aplican
+// **negrita**, *cursiva* / _cursiva_, `código`, [enlace](https://…), # títulos, listas - y 1.
+function mdInline(t) {
+  return t
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*\w])\*([^*\s](?:[^*]*[^*\s])?)\*(?![*\w])/g, "$1<em>$2</em>")
+    .replace(/(^|[^_\w])_([^_\s](?:[^_]*[^_\s])?)_(?![_\w])/g, "$1<em>$2</em>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+}
+function md(src) {
+  const out = [];
+  let para = [], list = null;
+  const flushPara = () => { if (para.length) { out.push(`<p>${para.map(mdInline).join("<br>")}</p>`); para = []; } };
+  const flushList = () => {
+    if (list) { out.push(`<${list.type}>${list.items.map((i) => `<li>${mdInline(i)}</li>`).join("")}</${list.type}>`); list = null; }
+  };
+  for (const line of esc(src || "").split(/\r?\n/)) {
+    let m;
+    if (!line.trim()) { flushPara(); flushList(); continue; }
+    if ((m = line.match(/^\s*(#{1,3})\s+(.*)$/))) {
+      flushPara(); flushList();
+      const n = m[1].length + 2;
+      out.push(`<h${n}>${mdInline(m[2])}</h${n}>`);
+      continue;
+    }
+    const ul = line.match(/^\s*[-*•]\s+(.*)$/), ol = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    if (ul || ol) {
+      flushPara();
+      const type = ul ? "ul" : "ol";
+      if (!list || list.type !== type) { flushList(); list = { type, items: [] }; }
+      list.items.push((ul || ol)[1]);
+      continue;
+    }
+    flushList();
+    para.push(line);
+  }
+  flushPara(); flushList();
+  return out.join("");
+}
+
 function questionHtml(q) {
-  return q ? `<div class="question">❓ ${esc(q)}</div>` : "";
+  return q ? `<div class="question md">${md(q)}</div>` : "";
 }
 
 // card de la presentación / administración según el paso
@@ -97,7 +138,7 @@ function cardHtml(card, step, opts = {}) {
     if (step === "texts" || step === "propose") body += `<div class="empty">📱 Escenario en los teléfonos de este rol</div>`;
   } else if (showText) {
     const cls = step === "texts" || step === "propose" ? "card-text" : "card-text small";
-    body += card.text ? `<div class="${cls}">${esc(card.text)}</div>` : `<div class="empty">(sin texto)</div>`;
+    body += card.text ? `<div class="${cls} md">${md(card.text)}</div>` : `<div class="empty">(sin texto)</div>`;
     body += questionHtml(card.question);
   }
   if (step === "propose") body += proposersHtml(card.proposers);
@@ -115,7 +156,7 @@ function contextCardHtml(ctx) {
   if (!ctx) return "";
   return `<div class="card card-context" style="${cssVars(ctx)}">
     <div class="card-head"><span>${ctx.emoji}</span><span>${esc(ctx.name)}</span></div>
-    ${ctx.text ? `<div class="card-text">${esc(ctx.text)}</div>` : `<div class="empty">(sin contexto)</div>`}</div>`;
+    ${ctx.text ? `<div class="card-text md">${md(ctx.text)}</div>` : `<div class="empty">(sin contexto)</div>`}</div>`;
 }
 
 function indicatorsHtml(cards) {
@@ -158,12 +199,19 @@ function boardHtml(d, opts = {}) {
   }
   if (!d.slide) return `${phasesHtml(null)}<div class="waiting">No hay ninguna diapositiva seleccionada.</div>`;
   const s = d.slide;
+  // Con contextos separados, en los pasos 1 y 2 las tarjetas de rol no tienen nada que mostrar
+  // en la presentación: solo se muestra el contexto general.
+  const contextOnly = !opts.alwaysText && d.cards.length && d.cards[0].text_hidden
+    && (d.step === "texts" || d.step === "propose");
+  const grid = contextOnly
+    ? `<div class="board-grid context-only">${contextCardHtml(d.context)}</div>`
+    : `<div class="board-grid">${contextCardHtml(d.context)}${d.cards.map((c) => cardHtml(c, d.step, opts)).join("")}</div>`;
   return `${phasesHtml(s.category)}
     <div class="board-meta">
       <div class="board-title">${s.title ? esc(s.title) : esc(s.category)} <span class="muted">${s.index}/${s.total}</span></div>
       <div class="board-step">${stepsHtml(d.step)} ${timerHtml(d.deadline)}</div>
     </div>
-    <div class="board-grid">${contextCardHtml(d.context)}${d.cards.map((c) => cardHtml(c, d.step, opts)).join("")}</div>
+    ${grid}
     ${indicatorsHtml(d.cards)}`;
 }
 

@@ -89,13 +89,25 @@ async def no_cdn_cache(request: Request, call_next):
 _asset_versions: dict[str, str] = {}
 
 
+def _app_version() -> str:
+    """Huella del código desplegado (Python, plantillas y estáticos) para comprobar qué versión corre."""
+    h = hashlib.sha256()
+    for f in sorted(p for p in BASE_DIR.rglob("*") if p.is_file() and p.suffix in {".py", ".html", ".js", ".css"}):
+        h.update(f.relative_to(BASE_DIR).as_posix().encode())
+        h.update(f.read_bytes())
+    return h.hexdigest()[:8]
+
+
+APP_VERSION = _app_version()
+
+
 def asset(path: str) -> str:
     """URL de un archivo estático con un hash de su contenido (cambia con cada versión)."""
     if path not in _asset_versions:
         _asset_versions[path] = hashlib.sha256((BASE_DIR / "static" / path).read_bytes()).hexdigest()[:12]
     return f"/static/{path}?v={_asset_versions[path]}"
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
-templates.env.globals.update(asset=asset, CONTEXT_CARD=CONTEXT_CARD, PROFILES=PROFILES, CATEGORIES=CATEGORIES, MAX_ALTERNATIVES=MAX_ALTERNATIVES)
+templates.env.globals.update(APP_VERSION=APP_VERSION, asset=asset, CONTEXT_CARD=CONTEXT_CARD, PROFILES=PROFILES, CATEGORIES=CATEGORIES, MAX_ALTERNATIVES=MAX_ALTERNATIVES)
 
 
 def join_url(request: Request, act: Activity) -> str:
@@ -629,7 +641,7 @@ def results_csv(activity_id: int, db: Session = Depends(get_db), admin=Depends(r
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True}
+    return {"ok": True, "version": APP_VERSION}
 
 
 # =========================================================================== URL corta (al final)

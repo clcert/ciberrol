@@ -8,6 +8,17 @@ diapositivas, participantes, propuestas, votos, paso actual) se guarda en Postgr
 
 ## Levantar
 
+La forma corta es el script `up.sh`, que reconstruye la imagen, levanta todo, espera a que la app responda y
+muestra la versión desplegada (y la clave del admin si se acaba de crear):
+
+```bash
+./up.sh              # desarrollo / servidor propio (con el Caddy incluido)
+./up.sh prod         # producción con caddy-docker-proxy (docker-compose.prod.yml)
+./up.sh prod --pull  # igual, pero antes hace git pull
+```
+
+O a mano:
+
 ```bash
 cp .env.example .env        # ajustar PUBLIC_URL, clave de Postgres, dominio…
 docker compose up -d --build

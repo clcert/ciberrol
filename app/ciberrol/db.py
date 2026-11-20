@@ -54,6 +54,13 @@ def init_db() -> str:
         conn.execute(text("SELECT pg_advisory_lock(:id)"), {"id": _INIT_LOCK_ID})
         try:
             Base.metadata.create_all(conn)
+            # Migraciones livianas (columnas agregadas después de crear las tablas)
+            conn.execute(text("ALTER TABLE slides ADD COLUMN IF NOT EXISTS text_general TEXT NOT NULL DEFAULT ''"))
+            conn.execute(text("ALTER TABLE activities ADD COLUMN IF NOT EXISTS show_authors BOOLEAN NOT NULL DEFAULT false"))
+            conn.execute(text("ALTER TABLE activities ADD COLUMN IF NOT EXISTS split_contexts BOOLEAN NOT NULL DEFAULT true"))
+            for p in ("directivo", "comunicacional", "legal", "tecnico"):
+                conn.execute(text(f"ALTER TABLE slides ADD COLUMN IF NOT EXISTS q_{p} TEXT NOT NULL DEFAULT ''"))
+            conn.execute(text("UPDATE slides SET category = 'Evaluar' WHERE category = 'Aprendizaje'"))
             conn.commit()
             with Session(bind=conn) as db:
                 secret = db.get(Setting, "session_secret")

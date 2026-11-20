@@ -6,10 +6,14 @@
 <main class="wrap">
   <section class="panel">
     <h2>Nueva actividad</h2>
-    <form method="post" action="/admin/activities" class="row-form">
+    <form method="post" action="/admin/activities" class="row-form" id="new-act">
       <input type="text" name="name" maxlength="200" placeholder="Nombre (p. ej. Simulacro ransomware — Grupo A)" required>
       <button class="btn-primary" type="submit">Crear</button>
     </form>
+    <label class="check" style="margin-top:.6em"><input type="checkbox" name="hide_authors" value="true" form="new-act" checked>
+      Ocultar el nombre de quien propone (en la presentación y los teléfonos)</label>
+    <label class="check"><input type="checkbox" name="split_contexts" value="true" form="new-act" checked>
+      Mostrar el contexto general solo en la presentación y el texto de cada rol solo en los teléfonos</label>
   </section>
 
   <section class="panel">

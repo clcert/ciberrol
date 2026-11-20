@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from .models import (
     CATEGORIES,
+    LEGACY_CATEGORIES,
     LETTERS,
     MAX_ALTERNATIVES,
     PROFILE_KEYS,
@@ -22,6 +23,7 @@ from .models import (
     STEP_RESULTS,
     STEP_TEXTS,
     STEP_VOTE,
+    CONTEXT_CARD,
     Activity,
     Participant,
     Proposal,
@@ -76,6 +78,19 @@ def ordered_slides(db: Session, activity_id: int) -> list[Slide]:
             select(Slide).where(Slide.activity_id == activity_id).order_by(cat_order, Slide.position, Slide.id)
         )
     )
+
+
+DEFAULT_INDICATOR = 50
+
+
+def default_indicators(slides: list[Slide], category: str) -> dict[str, int]:
+    """Indicadores iniciales de una diapositiva nueva al final de `category`:
+    los de la diapositiva anterior en la línea de tiempo, o 50 si es la primera."""
+    cut = CATEGORIES.index(category) if category in CATEGORIES else 0
+    prev = [s for s in slides if s.category in CATEGORIES and CATEGORIES.index(s.category) <= cut]
+    if not prev:
+        return {p: DEFAULT_INDICATOR for p in PROFILE_KEYS}
+    return {p: prev[-1].indicator_for(p) for p in PROFILE_KEYS}
 
 
 def lock_activity(db: Session, activity_id: int) -> Activity:
@@ -314,6 +329,8 @@ def activity_header(act: Activity, join_url: str) -> dict:
         "code": act.code,
         "status": act.status,
         "show_qr": act.show_qr,
+        "show_authors": act.show_authors,
+        "split_contexts": act.split_contexts,
         "join_url": join_url,
     }
 
@@ -331,11 +348,14 @@ def board_payload(db: Session, act: Activity, join_url: str, admin_live: bool) -
     if slide is None or act.status != STATUS_RUNNING:
         return out
     out["slide"] = _slide_header(ordered_slides(db, act.id), slide)
+    out["context"] = {**CONTEXT_CARD, "text": slide.text_general}
 
     step = act.step
+    names = admin_live or act.show_authors  # el panel admin siempre ve los nombres
+    hide_role_texts = act.split_contexts and not admin_live  # textos de rol solo en los teléfonos
     props = _proposals_by_profile(db, slide.id)
     show_alts = step in (STEP_PROPOSED, STEP_VOTE, STEP_RESULTS) or (admin_live and step == STEP_PROPOSE)
-    show_counts = step == STEP_RESULTS or (admin_live and step == STEP_VOTE)
+    show_counts = step == STEP_RESULTS  # resultados solo tras cerrar la votación (también para el admin)
     counts = _vote_counts(db, slide.id) if show_counts else None
     cards = []
     for p in PROFILE_KEYS:
@@ -343,10 +363,12 @@ def board_payload(db: Session, act: Activity, join_url: str, admin_live: bool) -
         card = {
             "profile": p,
             **PROFILES[p],
-            "text": slide.text_for(p),
+            "text": "" if hide_role_texts else slide.text_for(p),
+            "question": "" if hide_role_texts else slide.question_for(p),
+            "text_hidden": hide_role_texts,
             "indicator": slide.indicator_for(p),
             "proposers": [
-                {"name": x.participant.name, "submitted": x.submitted, "has_text": bool(x.text.strip())}
+                {"name": x.participant.name if names else None, "submitted": x.submitted, "has_text": bool(x.text.strip())}
                 for x in plist
             ]
             if step != STEP_TEXTS
@@ -354,7 +376,9 @@ def board_payload(db: Session, act: Activity, join_url: str, admin_live: bool) -
             "alternatives": [],
         }
         if show_alts:
-            card["alternatives"], total = _alternatives(plist, counts, authors=admin_live or step == STEP_RESULTS)
+            card["alternatives"], total = _alternatives(
+                plist, counts, authors=admin_live or (step == STEP_RESULTS and act.show_authors)
+            )
             if counts is not None:
                 card["total_votes"] = total
         cards.append(card)
@@ -438,11 +462,14 @@ def participant_payload(db: Session, act: Activity, part: Participant) -> dict:
     if act.status != STATUS_RUNNING or slide is None:
         return out
     out["slide"] = _slide_header(ordered_slides(db, act.id), slide)
+    # con split_contexts el contexto general va solo a la presentación
+    out["context"] = None if act.split_contexts else {**CONTEXT_CARD, "text": slide.text_general}
     p = part.profile
     plist = _proposals_by_profile(db, slide.id).get(p, [])
     mine = next((x for x in plist if x.participant_id == part.id), None)
-    out["card"] = {"profile": p, **PROFILES[p], "text": slide.text_for(p)}
-    out["proposers"] = [x.participant.name for x in plist]
+    out["card"] = {"profile": p, **PROFILES[p], "text": slide.text_for(p), "question": slide.question_for(p)}
+    out["proposers"] = [x.participant.name for x in plist] if act.show_authors else []
+    out["n_proposers"] = len(plist)
     out["is_proposer"] = mine is not None
     out["my_proposal"] = {"text": mine.text, "submitted": mine.submitted} if mine else None
     out["alternatives"] = []
@@ -450,12 +477,21 @@ def participant_payload(db: Session, act: Activity, part: Participant) -> dict:
     out["can_vote"] = False
     if act.step in (STEP_PROPOSED, STEP_VOTE, STEP_RESULTS):
         counts = _vote_counts(db, slide.id) if act.step == STEP_RESULTS else None
-        alts, total = _alternatives(plist, counts, authors=act.step == STEP_RESULTS)
+        alts, total = _alternatives(plist, counts, authors=act.step == STEP_RESULTS and act.show_authors)
         out["alternatives"] = alts
         if counts is not None:
             out["total_votes"] = total
         my_vote = db.scalar(select(Vote.proposal_id).where(Vote.slide_id == slide.id, Vote.participant_id == part.id))
         out["my_vote"] = next((a["letter"] for a in alts if a["id"] == my_vote), None)
+        if act.step == STEP_RESULTS:
+            # Resultados de las 4 tarjetas para todos (la propia primero)
+            props = _proposals_by_profile(db, slide.id)
+            out["all_results"] = []
+            for rp in sorted(PROFILE_KEYS, key=lambda k: k != p):
+                ralts, rtotal = _alternatives(props.get(rp, []), counts, authors=act.show_authors)
+                out["all_results"].append(
+                    {"profile": rp, **PROFILES[rp], "alternatives": ralts, "total_votes": rtotal, "proposers": [], "mine": rp == p}
+                )
         if act.step == STEP_VOTE and my_vote is None and can_vote(db, slide.id, part):
             ensure_eligible(db, slide.id, part.id)
             db.commit()
@@ -544,7 +580,9 @@ def export_slides(db: Session, act: Activity) -> dict:
             {
                 "category": s.category,
                 "title": s.title,
+                "context": s.text_general,
                 "texts": {p: s.text_for(p) for p in PROFILE_KEYS},
+                "questions": {p: s.question_for(p) for p in PROFILE_KEYS},
                 "indicators": {p: s.indicator_for(p) for p in PROFILE_KEYS},
                 "num_alternatives": s.num_alternatives,
                 "propose_seconds": s.propose_seconds,
@@ -566,25 +604,36 @@ def import_slides(db: Session, act: Activity, data: dict, replace: bool) -> int:
         c: (db.scalar(select(func.max(Slide.position)).where(Slide.activity_id == act.id, Slide.category == c)) or 0) + 1
         for c in CATEGORIES
     }
+    existing = ordered_slides(db, act.id)
+    last_inds = (
+        {p: existing[-1].indicator_for(p) for p in PROFILE_KEYS}
+        if existing
+        else {p: DEFAULT_INDICATOR for p in PROFILE_KEYS}
+    )
     n = 0
     for item in data["slides"]:
         if not isinstance(item, dict):
             continue
-        cat = item.get("category") if item.get("category") in CATEGORIES else CATEGORIES[0]
+        cat = LEGACY_CATEGORIES.get(item.get("category"), item.get("category"))
+        cat = cat if cat in CATEGORIES else CATEGORIES[1]
         texts = item.get("texts") if isinstance(item.get("texts"), dict) else {}
         inds = item.get("indicators") if isinstance(item.get("indicators"), dict) else {}
+        qs = item.get("questions") if isinstance(item.get("questions"), dict) else {}
         slide = Slide(
             activity_id=act.id,
             category=cat,
             position=next_pos[cat],
             title=str(item.get("title") or "")[:200],
+            text_general=str(item.get("context") or "")[:5000],
             num_alternatives=clamp(item.get("num_alternatives"), 1, MAX_ALTERNATIVES, 3),
-            propose_seconds=clamp(item.get("propose_seconds"), 5, 600, 30),
-            vote_seconds=clamp(item.get("vote_seconds"), 5, 600, 30),
+            propose_seconds=clamp(item.get("propose_seconds"), 5, 600, 60),
+            vote_seconds=clamp(item.get("vote_seconds"), 5, 600, 60),
         )
         for p in PROFILE_KEYS:
             setattr(slide, f"text_{p}", str(texts.get(p) or "")[:5000])
-            setattr(slide, f"ind_{p}", clamp(inds.get(p), 0, 100, 0))
+            setattr(slide, f"q_{p}", str(qs.get(p) or "")[:2000])
+            setattr(slide, f"ind_{p}", clamp(inds.get(p), 0, 100, last_inds[p]))
+            last_inds[p] = getattr(slide, f"ind_{p}")
         next_pos[cat] += 1
         db.add(slide)
         n += 1

@@ -25,14 +25,19 @@
         </div>
         <div>
           <label for="propose_seconds">Tiempo para proponer (segundos)</label>
-          <input id="propose_seconds" type="number" name="propose_seconds" min="5" max="600" value="{{ slide.propose_seconds if slide else 30 }}">
+          <input id="propose_seconds" type="number" name="propose_seconds" min="5" max="600" value="{{ slide.propose_seconds if slide else 60 }}">
         </div>
         <div>
           <label for="vote_seconds">Tiempo para votar (segundos)</label>
-          <input id="vote_seconds" type="number" name="vote_seconds" min="5" max="600" value="{{ slide.vote_seconds if slide else 30 }}">
+          <input id="vote_seconds" type="number" name="vote_seconds" min="5" max="600" value="{{ slide.vote_seconds if slide else 60 }}">
         </div>
       </div>
     </section>
+
+    <fieldset class="profile-fieldset panel" style="--c:{{ CONTEXT_CARD.color }}">
+      <legend>{{ CONTEXT_CARD.emoji }} {{ CONTEXT_CARD.name }} <span class="muted small">(sin rol ni votación; se muestra a todos)</span></legend>
+      <textarea id="text_general" name="text_general" style="min-height:4.5em">{{ slide.text_general if slide else '' }}</textarea>
+    </fieldset>
 
     <div class="grid2">
       {% for key, p in PROFILES.items() %}
@@ -40,11 +45,13 @@
         <legend>{{ p.emoji }} {{ p.name }}</legend>
         <label for="text_{{ key }}">Escenario</label>
         <textarea id="text_{{ key }}" name="text_{{ key }}">{{ slide.text_for(key) if slide else '' }}</textarea>
+        <label for="q_{{ key }}">Pregunta (se muestra bajo el escenario)</label>
+        <textarea id="q_{{ key }}" name="q_{{ key }}" style="min-height:3.5em">{{ slide.question_for(key) if slide else '' }}</textarea>
         <label>Indicador {{ p.emoji }} (0 a 100)</label>
-        {% set ind = slide.indicator_for(key) if slide else 0 %}
+        {% set ind = slide.indicator_for(key) if slide else prev_inds[default_category][key] %}
         <div class="ind-row">
           <input type="range" min="0" max="100" value="{{ ind }}" oninput="this.nextElementSibling.value=this.value">
-          <input type="number" name="ind_{{ key }}" min="0" max="100" value="{{ ind }}" oninput="this.previousElementSibling.value=this.value">
+          <input type="number" name="ind_{{ key }}" data-ind="{{ key }}" min="0" max="100" value="{{ ind }}" oninput="this.previousElementSibling.value=this.value">
         </div>
       </fieldset>
       {% endfor %}
@@ -56,4 +63,23 @@
     </p>
   </form>
 </main>
+{% endblock %}
+{% block scripts %}
+{% if prev_inds %}
+<script>
+  // Diapositiva nueva: si cambia la fase, los indicadores toman los de la diapositiva anterior
+  // en esa posición de la línea de tiempo (mientras no se hayan modificado a mano).
+  const PREV_INDS = {{ prev_inds | tojson }};
+  let touched = false;
+  document.querySelectorAll(".ind-row input").forEach((el) => el.addEventListener("input", () => { touched = true; }));
+  document.getElementById("category").addEventListener("change", (e) => {
+    if (touched) return;
+    const vals = PREV_INDS[e.target.value];
+    document.querySelectorAll("[data-ind]").forEach((num) => {
+      num.value = vals[num.dataset.ind];
+      num.previousElementSibling.value = vals[num.dataset.ind];
+    });
+  });
+</script>
+{% endif %}
 {% endblock %}

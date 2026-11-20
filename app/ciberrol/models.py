@@ -27,8 +27,13 @@ PROFILES = {
 }
 PROFILE_KEYS = list(PROFILES)
 
-CATEGORIES = ["Contener", "Mitigar", "Recuperar", "Aprendizaje"]
+CATEGORIES = ["Preparar", "Contener", "Mitigar", "Recuperar", "Evaluar"]
+# Nombres antiguos de fases (para datos e importaciones previas)
+LEGACY_CATEGORIES = {"Aprendizaje": "Evaluar"}
 LETTERS = "ABCDEF"
+
+# Tarjeta de contexto general (gris, sin rol asociado)
+CONTEXT_CARD = {"name": "Contexto general", "color": "#6b7280", "ink": "#ffffff", "emoji": "🌐"}
 MAX_ALTERNATIVES = len(LETTERS)
 
 # Estado de una actividad
@@ -70,6 +75,10 @@ class Activity(Base):
     step: Mapped[str] = mapped_column(String(16), default=STEP_TEXTS)
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     show_qr: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Mostrar el nombre de quien propone en la presentación y los teléfonos (por defecto: oculto)
+    show_authors: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Contexto general solo en la presentación y textos de cada rol solo en los teléfonos (por defecto: sí)
+    split_contexts: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     # Rotación de quién propone, por rol: {perfil: {"queue": [pid...], "used": [pid...]}}
     rotation: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -91,19 +100,29 @@ class Slide(Base):
     text_comunicacional: Mapped[str] = mapped_column(Text, default="")
     text_legal: Mapped[str] = mapped_column(Text, default="")
     text_tecnico: Mapped[str] = mapped_column(Text, default="")
-    ind_directivo: Mapped[int] = mapped_column(Integer, default=0)
-    ind_comunicacional: Mapped[int] = mapped_column(Integer, default=0)
-    ind_legal: Mapped[int] = mapped_column(Integer, default=0)
-    ind_tecnico: Mapped[int] = mapped_column(Integer, default=0)
+    # Quinta tarjeta: contexto general (sin rol ni votación)
+    text_general: Mapped[str] = mapped_column(Text, default="", server_default="")
+    ind_directivo: Mapped[int] = mapped_column(Integer, default=50)
+    ind_comunicacional: Mapped[int] = mapped_column(Integer, default=50)
+    ind_legal: Mapped[int] = mapped_column(Integer, default=50)
+    ind_tecnico: Mapped[int] = mapped_column(Integer, default=50)
+    # Pregunta por rol (se muestra bajo el escenario)
+    q_directivo: Mapped[str] = mapped_column(Text, default="", server_default="")
+    q_comunicacional: Mapped[str] = mapped_column(Text, default="", server_default="")
+    q_legal: Mapped[str] = mapped_column(Text, default="", server_default="")
+    q_tecnico: Mapped[str] = mapped_column(Text, default="", server_default="")
     num_alternatives: Mapped[int] = mapped_column(Integer, default=3)
-    propose_seconds: Mapped[int] = mapped_column(Integer, default=30)
-    vote_seconds: Mapped[int] = mapped_column(Integer, default=30)
+    propose_seconds: Mapped[int] = mapped_column(Integer, default=60)
+    vote_seconds: Mapped[int] = mapped_column(Integer, default=60)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     activity: Mapped[Activity] = relationship(back_populates="slides", foreign_keys=[activity_id])
 
     def text_for(self, profile: str) -> str:
         return getattr(self, f"text_{profile}")
+
+    def question_for(self, profile: str) -> str:
+        return getattr(self, f"q_{profile}")
 
     def indicator_for(self, profile: str) -> int:
         return getattr(self, f"ind_{profile}")

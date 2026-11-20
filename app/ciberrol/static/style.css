@@ -70,7 +70,7 @@ form.inline { display: inline; margin: 0; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
 
 /* ---------- fase (línea de tiempo) ---------- */
-.phases { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
+.phases { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 12px; }
 .phase {
   text-align: center; padding: .5em .25em; border-radius: 10px;
   background: var(--panel-2); color: var(--muted); font-weight: 600; font-size: .9rem;
@@ -136,7 +136,7 @@ body.present .ind { font-size: clamp(.9rem, 1.3vw, 1.3rem); }
 .big-stats div { background: var(--panel-2); border-radius: 10px; padding: .5em 1em; }
 .big-stats b { font-size: 1.5rem; display: block; font-variant-numeric: tabular-nums; }
 
-.timeline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.timeline { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
 @media (max-width: 1000px) { .timeline { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 600px) { .timeline { grid-template-columns: 1fr; } }
 .tl-col { background: var(--panel-2); border-radius: 12px; padding: 10px; }
@@ -253,4 +253,20 @@ label.profile-btn.selected::after { content: "✓"; margin-left: .3em; }
 .barrow .bar { flex: 1; height: 1em; }
 .barrow .bar > span { opacity: .9; }
 .barrow > b { font-size: .85em; white-space: nowrap; font-variant-numeric: tabular-nums; }
-@media (max-width: 500px) { .phase { font-size: .72rem; padding: .45em .1em; } }
+@media (max-width: 500px) { .phase { font-size: .66rem; padding: .45em .05em; } }
+
+/* grilla del tablero: contexto general (ancho completo, 1/4 del alto) + 4 tarjetas 2x2.
+   Filas 1fr / 2fr / 2fr: la fila de contexto mide 1/4 de las dos filas de tarjetas. */
+.board-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 2fr 2fr; gap: 12px; }
+.board-grid > .card { min-height: 0; }
+.board-grid > .card-context { grid-column: 1 / -1; overflow: auto; }
+body.present .board-grid { grid-template-rows: minmax(13vh, 1fr) minmax(26vh, 2fr) minmax(26vh, 2fr); }
+body.present .board-grid > .card { min-height: 0; }
+@media (max-width: 700px) {
+  .board-grid { grid-template-columns: 1fr; grid-template-rows: none; }
+}
+
+.question { margin-top: .6em; font-weight: 700; white-space: pre-wrap; }
+label.question { display: block; font-size: 1rem; margin: .8em 0 .35em; }
+.results-stack { display: grid; gap: 10px; }
+.results-stack .card { min-height: 0; }

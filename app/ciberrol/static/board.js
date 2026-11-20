@@ -1,5 +1,5 @@
 // Utilidades compartidas: reloj, temporizadores, fase/pasos, cards, QR, indicadores y polling.
-const CATEGORIES = ["Contener", "Mitigar", "Recuperar", "Aprendizaje"];
+const CATEGORIES = ["Preparar", "Contener", "Mitigar", "Recuperar", "Evaluar"];
 const STEPS = [
   { n: 1, label: "Escenario" },
   { n: 2, label: "Propuestas" },
@@ -71,8 +71,16 @@ function resultsHtml(alts) {
 }
 function proposersHtml(proposers) {
   if (!proposers.length) return `<div class="empty">Nadie conectado en este rol para proponer</div>`;
+  if (proposers[0].name === null) {  // nombres ocultos
+    return `<div class="proposers">✍️ ${proposers.map((p) => `<span class="chip ${p.submitted ? "ok" : ""}">${p.submitted ? "✓" : "…"}</span>`).join(" ")}
+      <span class="muted-ink">${plural(proposers.length, "persona proponiendo", "personas proponiendo")}</span></div>`;
+  }
   return `<div class="proposers">✍️ ${proposers.map((p) =>
     `<span class="chip ${p.submitted ? "ok" : ""}">${esc(p.name)}${p.submitted ? " ✓" : ""}</span>`).join(" ")}</div>`;
+}
+
+function questionHtml(q) {
+  return q ? `<div class="question">❓ ${esc(q)}</div>` : "";
 }
 
 // card de la presentación / administración según el paso
@@ -85,9 +93,12 @@ function cardHtml(card, step, opts = {}) {
 
   let body = "";
   const showText = step === "texts" || step === "propose" || opts.alwaysText;
-  if (showText) {
+  if (showText && card.text_hidden) {
+    if (step === "texts" || step === "propose") body += `<div class="empty">📱 Escenario en los teléfonos de este rol</div>`;
+  } else if (showText) {
     const cls = step === "texts" || step === "propose" ? "card-text" : "card-text small";
     body += card.text ? `<div class="${cls}">${esc(card.text)}</div>` : `<div class="empty">(sin texto)</div>`;
+    body += questionHtml(card.question);
   }
   if (step === "propose") body += proposersHtml(card.proposers);
   if (card.alternatives.length) {
@@ -97,6 +108,14 @@ function cardHtml(card, step, opts = {}) {
   }
   return `<div class="card" style="${cssVars(card)}">
     <div class="card-head"><span>${card.emoji}</span><span>${esc(card.name)}</span><span class="count">${right}</span></div>${body}</div>`;
+}
+
+// Quinta tarjeta: contexto general (ancho completo, 1/4 del alto de las 4 tarjetas)
+function contextCardHtml(ctx) {
+  if (!ctx) return "";
+  return `<div class="card card-context" style="${cssVars(ctx)}">
+    <div class="card-head"><span>${ctx.emoji}</span><span>${esc(ctx.name)}</span></div>
+    ${ctx.text ? `<div class="card-text">${esc(ctx.text)}</div>` : `<div class="empty">(sin contexto)</div>`}</div>`;
 }
 
 function indicatorsHtml(cards) {
@@ -144,7 +163,7 @@ function boardHtml(d, opts = {}) {
       <div class="board-title">${s.title ? esc(s.title) : esc(s.category)} <span class="muted">${s.index}/${s.total}</span></div>
       <div class="board-step">${stepsHtml(d.step)} ${timerHtml(d.deadline)}</div>
     </div>
-    <div class="grid2">${d.cards.map((c) => cardHtml(c, d.step, opts)).join("")}</div>
+    <div class="board-grid">${contextCardHtml(d.context)}${d.cards.map((c) => cardHtml(c, d.step, opts)).join("")}</div>
     ${indicatorsHtml(d.cards)}`;
 }
 

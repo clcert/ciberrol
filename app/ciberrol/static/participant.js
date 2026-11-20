@@ -77,7 +77,7 @@ function proposeHtml(d) {
   return `<div class="card" style="${cssVars(c)}">
     <div class="card-head"><span>${c.emoji}</span><span>¡Te toca proponer!</span><span class="count">${timerHtml(d.deadline)}</span></div>
     ${c.text ? `<div class="card-text small">${esc(c.text)}</div>` : ""}
-    <label for="proposal" style="color:inherit;opacity:.85">¿Qué pasos propones seguir?</label>
+    <label for="proposal" class="question" style="color:inherit">${c.question ? `❓ ${esc(c.question)}` : "¿Qué pasos propones seguir?"}</label>
     <textarea id="proposal" maxlength="400" placeholder="Escribe tu propuesta…">${esc(d.my_proposal.text)}</textarea>
     <div class="row-between"><span class="muted-ink" id="chars"></span>
       <button class="btn-primary" id="send">Enviar propuesta</button></div>
@@ -120,26 +120,30 @@ function render(d) {
     const cardOpen = (title, right = "") => `<div class="card" style="${cssVars(c)}">
       <div class="card-head"><span>${c.emoji}</span><span>${title}</span><span class="count">${right}</span></div>`;
 
+    const ctx = d.context && d.context.text && (d.step === "texts" || (d.step === "propose" && !proposing))
+      ? contextCardHtml(d.context) + `<div style="height:10px"></div>` : "";
+    html += ctx;
     if (d.step === "texts") {
-      html += cardOpen(esc(c.name)) + `<div class="card-text">${esc(c.text) || "<span class='empty'>(sin texto)</span>"}</div></div>`;
+      html += cardOpen(esc(c.name)) + `<div class="card-text">${esc(c.text) || "<span class='empty'>(sin texto)</span>"}</div>${questionHtml(c.question)}</div>`;
     } else if (d.step === "propose") {
       if (proposing) {
         html += proposeHtml(d);
       } else {
-        html += cardOpen(esc(c.name), timerHtml(d.deadline)) + `<div class="card-text small">${esc(c.text)}</div>`;
+        html += cardOpen(esc(c.name), timerHtml(d.deadline)) + `<div class="card-text small">${esc(c.text)}</div>${questionHtml(c.question)}`;
         if (d.is_proposer) html += `<p class="note-ink">✅ Propuesta enviada:</p><div class="quote">${esc(d.my_proposal.text) || "(vacía)"}</div>`;
-        else html += `<p class="note-ink">${d.proposers.length ? `Están proponiendo: <b>${d.proposers.map(esc).join(", ")}</b>` : "Nadie de tu rol está proponiendo."}</p>`;
+        else html += `<p class="note-ink">${d.proposers.length ? `Están proponiendo: <b>${d.proposers.map(esc).join(", ")}</b>`
+          : d.n_proposers ? `${plural(d.n_proposers, "persona de tu rol está", "personas de tu rol están")} proponiendo.` : "Nadie de tu rol está proponiendo."}</p>`;
         html += `</div>`;
       }
     } else if (d.step === "proposed") {
-      html += cardOpen("Propuestas") + (d.alternatives.length ? altsHtml(d.alternatives) : `<div class="empty">Sin propuestas para tu rol</div>`)
+      html += cardOpen("Propuestas") + questionHtml(c.question) + (d.alternatives.length ? altsHtml(d.alternatives) : `<div class="empty">Sin propuestas para tu rol</div>`)
         + `<p class="note-ink">La votación comenzará en breve…</p></div>`;
     } else if (d.step === "vote") {
       if (!d.alternatives.length) {
         html += cardOpen("Votación") + `<div class="empty">No hay propuestas para tu rol en esta diapositiva.</div></div>`;
       } else if (d.my_vote || d.can_vote) {
         const voted = !!d.my_vote;
-        html += cardOpen(voted ? "Tu voto" : "Vota una alternativa", timerHtml(d.deadline)) + `<div class="vote-btns">
+        html += cardOpen(voted ? "Tu voto" : "Vota una alternativa", timerHtml(d.deadline)) + questionHtml(c.question) + `<div class="vote-btns">
           ${d.alternatives.map((a) => `
             <button class="vote-btn ${d.my_vote === a.letter ? "chosen" : ""}" data-id="${a.id}" data-letter="${esc(a.letter)}" ${voted ? "disabled" : ""}>
               <span class="letter">${esc(a.letter)}</span><span>${esc(a.text)}</span>
@@ -150,9 +154,9 @@ function render(d) {
           + `<p class="note-ink">${d.is_proposer ? "Como propusiste, en esta diapositiva no votas." : "No puedes votar en esta ronda."}</p></div>`;
       }
     } else if (d.step === "results") {
-      html += cardOpen("Resultados", d.total_votes !== undefined ? plural(d.total_votes, "voto", "votos") : "")
-        + (d.alternatives.length ? resultsHtml(d.alternatives) : `<div class="empty">Sin propuestas</div>`)
-        + (d.my_vote ? `<p class="note-ink">Votaste: ${esc(d.my_vote)}</p>` : "") + `</div>`;
+      // Resultados de las 4 tarjetas (la propia primero)
+      html += (d.my_vote ? `<p class="vote-note">Votaste: ${esc(d.my_vote)}</p>` : "")
+        + `<div class="results-stack">${(d.all_results || []).map((r) => cardHtml(r, "results")).join("")}</div>`;
     }
   }
   root.innerHTML = html;

@@ -22,6 +22,7 @@ from . import logic
 from .db import get_db, init_db
 from .models import (
     CATEGORIES,
+    CONTEXT_CARD,
     MAX_ALTERNATIVES,
     PROFILE_KEYS,
     PROFILES,
@@ -57,7 +58,7 @@ app.add_middleware(
 )
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
-templates.env.globals.update(PROFILES=PROFILES, CATEGORIES=CATEGORIES, MAX_ALTERNATIVES=MAX_ALTERNATIVES)
+templates.env.globals.update(CONTEXT_CARD=CONTEXT_CARD, PROFILES=PROFILES, CATEGORIES=CATEGORIES, MAX_ALTERNATIVES=MAX_ALTERNATIVES)
 
 
 def join_url(request: Request, act: Activity) -> str:
@@ -281,9 +282,15 @@ def admin_home(request: Request, db: Session = Depends(get_db), admin=Depends(re
 
 
 @app.post("/admin/activities")
-def create_activity(name: str = Form(...), db: Session = Depends(get_db), admin=Depends(require_admin)):
+def create_activity(
+    name: str = Form(...),
+    hide_authors: bool = Form(False),
+    split_contexts: bool = Form(False),
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin),
+):
     name = " ".join(name.split())[:200] or "Actividad"
-    act = Activity(name=name, code=logic.new_code(db), rotation={})
+    act = Activity(name=name, code=logic.new_code(db), rotation={}, show_authors=not hide_authors, split_contexts=split_contexts)
     db.add(act)
     db.commit()
     return RedirectResponse(f"/admin/a/{act.id}", status_code=303)
@@ -353,6 +360,10 @@ def control(activity_id: int, action: str, body: ControlIn | None = None, db: Se
 
     if action == "toggle_qr":
         act.show_qr = not act.show_qr
+    elif action == "toggle_authors":
+        act.show_authors = not act.show_authors
+    elif action == "toggle_split":
+        act.split_contexts = not act.split_contexts
     elif action == "start":
         if not ids:
             fail("La actividad no tiene diapositivas")
@@ -402,16 +413,18 @@ def control(activity_id: int, action: str, body: ControlIn | None = None, db: Se
 # =========================================================================== admin: diapositivas
 
 
-def _slide_form(request: Request, act: Activity, slide: Slide | None, category: str):
-    return templates.TemplateResponse(
-        request, "admin_slide_form.html", {"act": act, "slide": slide, "default_category": category}
-    )
+def _slide_form(request: Request, act: Activity, slide: Slide | None, category: str, db: Session):
+    ctx = {"act": act, "slide": slide, "default_category": category, "prev_inds": None}
+    if slide is None:
+        slides = logic.ordered_slides(db, act.id)
+        ctx["prev_inds"] = {c: logic.default_indicators(slides, c) for c in CATEGORIES}
+    return templates.TemplateResponse(request, "admin_slide_form.html", ctx)
 
 
 @app.get("/admin/a/{activity_id}/slides/new", response_class=HTMLResponse)
 def new_slide_form(request: Request, activity_id: int, category: str = CATEGORIES[0], db: Session = Depends(get_db), admin=Depends(require_admin)):
     act = get_activity(db, activity_id)
-    return _slide_form(request, act, None, category if category in CATEGORIES else CATEGORIES[0])
+    return _slide_form(request, act, None, category if category in CATEGORIES else CATEGORIES[0], db)
 
 
 def _get_slide(db: Session, activity_id: int, slide_id: int) -> Slide:
@@ -425,7 +438,7 @@ def _get_slide(db: Session, activity_id: int, slide_id: int) -> Slide:
 def edit_slide_form(request: Request, activity_id: int, slide_id: int, db: Session = Depends(get_db), admin=Depends(require_admin)):
     act = get_activity(db, activity_id)
     slide = _get_slide(db, activity_id, slide_id)
-    return _slide_form(request, act, slide, slide.category)
+    return _slide_form(request, act, slide, slide.category, db)
 
 
 async def _save_slide(request: Request, db: Session, act: Activity, slide: Slide | None) -> Slide:
@@ -444,12 +457,14 @@ async def _save_slide(request: Request, db: Session, act: Activity, slide: Slide
         else:
             slide.category, slide.position = category, new_pos
     slide.title = (form.get("title") or "").strip()[:200]
+    slide.text_general = (form.get("text_general") or "").strip()
     slide.num_alternatives = logic.clamp(form.get("num_alternatives"), 1, MAX_ALTERNATIVES, 3)
-    slide.propose_seconds = logic.clamp(form.get("propose_seconds"), 5, 600, 30)
-    slide.vote_seconds = logic.clamp(form.get("vote_seconds"), 5, 600, 30)
+    slide.propose_seconds = logic.clamp(form.get("propose_seconds"), 5, 600, 60)
+    slide.vote_seconds = logic.clamp(form.get("vote_seconds"), 5, 600, 60)
     for p in PROFILE_KEYS:
         setattr(slide, f"text_{p}", (form.get(f"text_{p}") or "").strip())
-        setattr(slide, f"ind_{p}", logic.clamp(form.get(f"ind_{p}"), 0, 100, 0))
+        setattr(slide, f"q_{p}", (form.get(f"q_{p}") or "").strip())
+        setattr(slide, f"ind_{p}", logic.clamp(form.get(f"ind_{p}"), 0, 100, logic.DEFAULT_INDICATOR))
     db.commit()
     return slide
 

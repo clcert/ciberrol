@@ -50,6 +50,10 @@ function renderControls(d) {
       + btn("🔄 Reiniciar diapositiva", "reset", "btn-danger") + btn("🏁 Finalizar", "finish");
   }
   if (a.status !== "finished") secondary += btn(a.show_qr ? "🙈 Ocultar QR" : "📱 Mostrar QR", "toggle_qr", a.show_qr ? "btn-active" : "");
+  secondary += btn(a.split_contexts ? "🖥️📱 Contextos separados (general en pantalla, rol en teléfonos)" : "🖥️ Todos los contextos en pantalla",
+    "toggle_split", a.split_contexts ? "btn-active" : "");
+  secondary += btn(a.show_authors ? "👤 Nombres de proponentes: visibles" : "🕶️ Nombres de proponentes: ocultos", "toggle_authors",
+    a.show_authors ? "btn-active" : "");
   els.status.innerHTML = status;
   els.primary.innerHTML = primary;
   els.secondary.innerHTML = secondary;

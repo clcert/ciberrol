@@ -65,6 +65,21 @@ En la línea de tiempo: **Exportar diapositivas** descarga un JSON; **Importar**
 - `PUBLIC_URL`: dirección que aparece en el QR.
 - `SITE_ADDRESS`: `:80` = HTTP en cualquier IP (red local). Con un dominio público Caddy obtiene HTTPS solo.
 - `COOKIE_SECURE=true` si usas HTTPS.
+- `TRUSTED_PROXIES`: proxies cuyos `X-Forwarded-*` se respetan (por defecto, redes privadas).
+
+### Detrás de otro proxy reverso (nginx, Traefik, Cloudflare…)
+
+Si otro proxy ya termina HTTPS y reenvía a este servidor:
+
+```env
+SITE_ADDRESS=:80                       # no un dominio: si no, Caddy redirige a HTTPS → bucle infinito
+PUBLIC_URL=https://rol.midominio.cl
+COOKIE_SECURE=true
+TRUSTED_PROXIES=private_ranges         # o la IP pública del proxy
+```
+
+El proxy externo debe enviar `X-Forwarded-Proto: https` y `Host` (casi todos lo hacen por defecto) y
+apuntar al puerto 80 de este servidor.
 - `POSTGRES_*`: credenciales de la base de datos.
 
 Colores y emojis de los roles: `PROFILES` en `app/ciberrol/models.py`.

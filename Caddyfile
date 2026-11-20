@@ -1,3 +1,11 @@
+{
+	servers {
+		# Confiar en los X-Forwarded-* (Proto, Host, For) que envía un proxy reverso externo,
+		# para que la app sepa que el cliente original usó HTTPS.
+		trusted_proxies static {$TRUSTED_PROXIES:private_ranges}
+	}
+}
+
 {$SITE_ADDRESS} {
 	encode gzip
 	reverse_proxy app:8000

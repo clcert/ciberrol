@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Actividades · Ciberrol{% endblock %}
+{% block body %}
+{% set act = None %}
+{% include "_admin_topbar.html" %}
+<main class="wrap">
+  <section class="panel">
+    <h2>Nueva actividad</h2>
+    <form method="post" action="/admin/activities" class="row-form">
+      <input type="text" name="name" maxlength="200" placeholder="Nombre (p. ej. Simulacro ransomware — Grupo A)" required>
+      <button class="btn-primary" type="submit">Crear</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Actividades</h2>
+    {% if not activities %}<p class="muted">Aún no hay actividades.</p>{% endif %}
+    <div class="act-list">
+    {% for a in activities %}
+      <div class="act-item">
+        <div>
+          <div class="t"><a href="/admin/a/{{ a.id }}">{{ a.name }}</a></div>
+          <div class="muted small">
+            <span class="code-pill">{{ a.code }}</span>
+            {{ join_url(a) }} ·
+            {{ {'lobby': 'Esperando inicio', 'running': 'En curso', 'finished': 'Finalizada'}[a.status] }} ·
+            {{ n_slides.get(a.id, 0) }} diapositiva(s) · {{ n_parts.get(a.id, 0) }} participante(s)
+          </div>
+        </div>
+        <div class="actions">
+          <a class="btn btn-sm btn-primary" href="/admin/a/{{ a.id }}">Abrir</a>
+          <a class="btn btn-sm" href="/admin/a/{{ a.id }}/presentacion" target="_blank" rel="noopener">Presentación</a>
+          <a class="btn btn-sm" href="/admin/a/{{ a.id }}/resultados">Resultados</a>
+          <form class="inline" method="post" action="/admin/activities/{{ a.id }}/delete"
+                onsubmit="return confirm('¿Eliminar esta actividad con sus diapositivas, participantes y votos?')">
+            <button class="btn-sm btn-danger" type="submit">Eliminar</button>
+          </form>
+        </div>
+      </div>
+    {% endfor %}
+    </div>
+  </section>
+</main>
+{% endblock %}

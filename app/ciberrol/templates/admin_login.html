@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Ingreso administración · Ciberrol{% endblock %}
+{% block body %}
+<main class="wrap">
+  <form class="panel login-box" method="post" action="/admin/login">
+    <h1>Administración</h1>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <label for="u">Usuario</label>
+    <input id="u" type="text" name="username" value="admin" autocomplete="username" required>
+    <label for="p">Clave</label>
+    <input id="p" type="password" name="password" autocomplete="current-password" required autofocus>
+    <p><button class="btn-primary" type="submit">Ingresar</button></p>
+  </form>
+</main>
+{% endblock %}

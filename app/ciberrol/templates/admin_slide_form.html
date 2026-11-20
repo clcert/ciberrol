@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Editar' if slide else 'Nueva' }} diapositiva · Ciberrol{% endblock %}
+{% block body %}
+{% include "_admin_topbar.html" %}
+<main class="wrap">
+  <form method="post" action="{{ '/admin/a/%d/slides/%d' % (act.id, slide.id) if slide else '/admin/a/%d/slides' % act.id }}">
+    <section class="panel">
+      <h2>{{ 'Editar' if slide else 'Nueva' }} diapositiva <span class="muted small">· {{ act.name }}</span></h2>
+      <div class="grid2">
+        <div>
+          <label for="category">Fase</label>
+          <select id="category" name="category">
+            {% for c in CATEGORIES %}<option value="{{ c }}" {% if c == default_category %}selected{% endif %}>{{ c }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="title">Título (opcional)</label>
+          <input id="title" type="text" name="title" maxlength="200" value="{{ slide.title if slide else '' }}">
+        </div>
+      </div>
+      <div class="grid3">
+        <div>
+          <label for="num_alternatives">Alternativas (personas que proponen por rol)</label>
+          <input id="num_alternatives" type="number" name="num_alternatives" min="1" max="{{ MAX_ALTERNATIVES }}" value="{{ slide.num_alternatives if slide else 3 }}">
+        </div>
+        <div>
+          <label for="propose_seconds">Tiempo para proponer (segundos)</label>
+          <input id="propose_seconds" type="number" name="propose_seconds" min="5" max="600" value="{{ slide.propose_seconds if slide else 30 }}">
+        </div>
+        <div>
+          <label for="vote_seconds">Tiempo para votar (segundos)</label>
+          <input id="vote_seconds" type="number" name="vote_seconds" min="5" max="600" value="{{ slide.vote_seconds if slide else 30 }}">
+        </div>
+      </div>
+    </section>
+
+    <div class="grid2">
+      {% for key, p in PROFILES.items() %}
+      <fieldset class="profile-fieldset panel" style="--c:{{ p.color }}">
+        <legend>{{ p.emoji }} {{ p.name }}</legend>
+        <label for="text_{{ key }}">Escenario</label>
+        <textarea id="text_{{ key }}" name="text_{{ key }}">{{ slide.text_for(key) if slide else '' }}</textarea>
+        <label>Indicador {{ p.emoji }} (0 a 100)</label>
+        {% set ind = slide.indicator_for(key) if slide else 0 %}
+        <div class="ind-row">
+          <input type="range" min="0" max="100" value="{{ ind }}" oninput="this.nextElementSibling.value=this.value">
+          <input type="number" name="ind_{{ key }}" min="0" max="100" value="{{ ind }}" oninput="this.previousElementSibling.value=this.value">
+        </div>
+      </fieldset>
+      {% endfor %}
+    </div>
+
+    <p class="controls">
+      <button class="btn-primary" type="submit">Guardar</button>
+      <a class="btn" href="/admin/a/{{ act.id }}">Cancelar</a>
+    </p>
+  </form>
+</main>
+{% endblock %}

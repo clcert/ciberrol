@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}{{ act.name }} · Ciberrol{% endblock %}
+{% block body %}
+{% include "_admin_topbar.html" %}
+<main class="wrap">
+  <div class="act-title">
+    <h1>{{ act.name }}</h1>
+    <div class="muted">Unirse: <a href="{{ join_url }}" target="_blank" rel="noopener">{{ join_url }}</a> · código <span class="code-pill">{{ act.code }}</span></div>
+  </div>
+  {% if request.query_params.get('importadas') %}
+  <p class="flash">✅ Se importaron {{ request.query_params.get('importadas') }} diapositiva(s).</p>
+  {% endif %}
+
+  <section class="panel">
+    <div class="ctl-status" id="ctl-status">Cargando…</div>
+    <div class="controls" id="ctl-primary"></div>
+    <div class="controls" id="ctl-secondary" style="margin-top:8px"></div>
+    <div class="big-stats" id="stats"></div>
+    <div class="table-scroll">
+    <table class="progress-table">
+      <thead><tr><th>Rol</th><th class="num">Unidos</th><th class="num">Conectados</th><th class="num">Propuestas</th><th class="num">Votaron</th><th class="num">Faltan</th></tr></thead>
+      <tbody id="progress"></tbody>
+    </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Diapositiva actual</h2>
+    <div id="board"><div class="waiting">Cargando…</div></div>
+  </section>
+
+  <section class="panel">
+    <h2>Participantes</h2>
+    <div class="lobby-roles" id="people"></div>
+  </section>
+
+  <section class="panel">
+    <div class="row-between">
+      <h2>Línea de tiempo</h2>
+      <div class="controls">
+        <a class="btn btn-sm" href="/admin/a/{{ act.id }}/export">⬇️ Exportar diapositivas</a>
+        <button class="btn-sm" type="button" onclick="document.getElementById('import').classList.toggle('hidden')">⬆️ Importar</button>
+      </div>
+    </div>
+    <form id="import" class="panel hidden import-form" method="post" action="/admin/a/{{ act.id }}/import" enctype="multipart/form-data">
+      <label for="file">Archivo JSON exportado desde Ciberrol</label>
+      <input id="file" type="file" name="file" accept="application/json,.json" required>
+      <label class="check"><input type="checkbox" name="replace" value="true"> Reemplazar las diapositivas actuales (si no, se agregan al final de cada fase)</label>
+      <p><button class="btn-primary" type="submit">Importar</button></p>
+    </form>
+    <div class="timeline">
+      {% for cat in CATEGORIES %}
+      <div class="tl-col">
+        <h3><span>{{ cat }}</span><a class="btn btn-sm" href="/admin/a/{{ act.id }}/slides/new?category={{ cat | urlencode }}">＋ Nueva</a></h3>
+        {% for s in by_cat[cat] %}
+        <div class="tl-item" id="slide-{{ s.id }}" data-slide-id="{{ s.id }}">
+          <div class="t">
+            {{ s.title or ('Diapositiva ' ~ loop.index) }}
+            <div class="muted small">{{ s.num_alternatives }} alt. · {{ s.propose_seconds }} s propuestas · {{ s.vote_seconds }} s votación</div>
+          </div>
+          <div class="actions">
+            <button class="btn-sm btn-primary" type="button" data-goto="{{ s.id }}">Mostrar</button>
+            <a class="btn btn-sm" href="/admin/a/{{ act.id }}/slides/{{ s.id }}">Editar</a>
+            <form class="inline" method="post" action="/admin/a/{{ act.id }}/slides/{{ s.id }}/move"><input type="hidden" name="direction" value="up"><button class="btn-sm" type="submit" title="Subir" {% if loop.first %}disabled{% endif %}>↑</button></form>
+            <form class="inline" method="post" action="/admin/a/{{ act.id }}/slides/{{ s.id }}/move"><input type="hidden" name="direction" value="down"><button class="btn-sm" type="submit" title="Bajar" {% if loop.last %}disabled{% endif %}>↓</button></form>
+            <form class="inline" method="post" action="/admin/a/{{ act.id }}/slides/{{ s.id }}/delete" onsubmit="return confirm('¿Eliminar esta diapositiva con sus propuestas y votos?')"><button class="btn-sm btn-danger" type="submit">Eliminar</button></form>
+          </div>
+        </div>
+        {% else %}
+        <div class="tl-empty">Sin diapositivas</div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</main>
+{% endblock %}
+{% block scripts %}
+<script>window.CIBERROL_ACT = {{ act.id }};</script>
+<script src="{{ url_for('static', path='admin.js') }}?v=3"></script>
+{% endblock %}

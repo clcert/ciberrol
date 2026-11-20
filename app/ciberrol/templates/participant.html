@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block body_class %}participant{% endblock %}
+{% block body %}
+<main class="wrap" id="app"><div class="waiting">Cargando…</div></main>
+{% endblock %}
+{% block scripts %}
+<script>window.CIBERROL_CODE = {{ code | tojson }};</script>
+<script src="{{ url_for('static', path='participant.js') }}?v=3"></script>
+{% endblock %}

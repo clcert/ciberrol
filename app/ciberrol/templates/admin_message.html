@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block body %}
+{% include "_admin_topbar.html" %}
+<main class="wrap"><section class="panel"><p class="error">{{ message }}</p><a class="btn" href="/admin/a/{{ act.id }}">Volver</a></section></main>
+{% endblock %}

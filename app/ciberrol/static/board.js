@@ -1,0 +1,187 @@
+// Utilidades compartidas: reloj, temporizadores, fase/pasos, cards, QR, indicadores y polling.
+const CATEGORIES = ["Contener", "Mitigar", "Recuperar", "Aprendizaje"];
+const STEPS = [
+  { n: 1, label: "Escenario" },
+  { n: 2, label: "Propuestas" },
+  { n: 3, label: "Votación" },
+  { n: 4, label: "Resultados" },
+];
+const STEP_NUM = { texts: 1, propose: 2, proposed: 2, vote: 3, results: 4 };
+const STEP_LABEL = {
+  texts: "Escenario",
+  propose: "Proponiendo",
+  proposed: "Propuestas listas",
+  vote: "Votación",
+  results: "Resultados",
+};
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function cssVars(p) { return `--c:${p.color};--ink:${p.ink}`; }
+function plural(n, one, many) { return `${n} ${n === 1 ? one : many}`; }
+
+// ---------- reloj sincronizado con el servidor y temporizadores ----------
+let clockOffset = 0;
+function syncClock(serverNow) { clockOffset = serverNow - Date.now(); }
+function serverNow() { return Date.now() + clockOffset; }
+function secondsLeft(deadline) { return Math.max(0, Math.ceil((deadline - serverNow()) / 1000)); }
+
+const tickHooks = [];
+function onTick(fn) { tickHooks.push(fn); }
+setInterval(() => {
+  document.querySelectorAll("[data-deadline]").forEach((el) => {
+    const s = secondsLeft(+el.dataset.deadline);
+    el.textContent = s > 0 ? `${s} s` : "¡Tiempo!";
+    el.classList.toggle("low", s <= 5);
+  });
+  tickHooks.forEach((fn) => fn());
+}, 200);
+
+function timerHtml(deadline) {
+  if (!deadline) return "";
+  return `<span class="timer" data-deadline="${deadline}">${secondsLeft(deadline)} s</span>`;
+}
+
+// ---------- fase y pasos ----------
+function phasesHtml(category) {
+  const cur = CATEGORIES.indexOf(category);
+  return `<div class="phases">${CATEGORIES.map((c, i) =>
+    `<div class="phase ${i === cur ? "active" : i < cur ? "done" : ""}">${esc(c)}</div>`).join("")}</div>`;
+}
+function stepsHtml(step) {
+  const cur = STEP_NUM[step] || 0;
+  return `<div class="steps">${STEPS.map((s) =>
+    `<span class="stepdot ${s.n === cur ? "active" : s.n < cur ? "done" : ""}"><b>${s.n}</b> ${s.label}</span>`).join("")}</div>`;
+}
+
+// ---------- alternativas y resultados ----------
+function altsHtml(alts) {
+  return `<ul class="alts">${alts.map((a) => `
+    <li class="alt"><span class="letter">${esc(a.letter)}</span>
+      <span>${esc(a.text)}${a.author ? ` <span class="author">— ${esc(a.author)}</span>` : ""}</span></li>`).join("")}</ul>`;
+}
+function resultsHtml(alts) {
+  return `<ul class="alts">${alts.map((a) => `
+    <li class="alt ${a.winner ? "winner" : ""}">
+      <span class="letter">${esc(a.letter)}</span>
+      <span>${esc(a.text)}${a.author ? ` <span class="author">— ${esc(a.author)}</span>` : ""}</span>
+      <div class="barrow"><div class="bar"><span style="width:${a.pct}%"></span></div><b>${plural(a.count, "voto", "votos")} · ${a.pct}%</b></div>
+    </li>`).join("")}</ul>`;
+}
+function proposersHtml(proposers) {
+  if (!proposers.length) return `<div class="empty">Nadie conectado en este rol para proponer</div>`;
+  return `<div class="proposers">✍️ ${proposers.map((p) =>
+    `<span class="chip ${p.submitted ? "ok" : ""}">${esc(p.name)}${p.submitted ? " ✓" : ""}</span>`).join(" ")}</div>`;
+}
+
+// card de la presentación / administración según el paso
+function cardHtml(card, step, opts = {}) {
+  const hasCounts = card.total_votes !== undefined;
+  let right = "";
+  if (hasCounts) right = plural(card.total_votes, "voto", "votos");
+  else if (step === "propose" && card.proposers.length)
+    right = `${card.proposers.filter((p) => p.submitted).length}/${card.proposers.length} enviadas`;
+
+  let body = "";
+  const showText = step === "texts" || step === "propose" || opts.alwaysText;
+  if (showText) {
+    const cls = step === "texts" || step === "propose" ? "card-text" : "card-text small";
+    body += card.text ? `<div class="${cls}">${esc(card.text)}</div>` : `<div class="empty">(sin texto)</div>`;
+  }
+  if (step === "propose") body += proposersHtml(card.proposers);
+  if (card.alternatives.length) {
+    body += hasCounts ? resultsHtml(card.alternatives) : altsHtml(card.alternatives);
+  } else if (["proposed", "vote", "results"].includes(step)) {
+    body += `<div class="empty" style="margin-top:.6em">Sin propuestas</div>`;
+  }
+  return `<div class="card" style="${cssVars(card)}">
+    <div class="card-head"><span>${card.emoji}</span><span>${esc(card.name)}</span><span class="count">${right}</span></div>${body}</div>`;
+}
+
+function indicatorsHtml(cards) {
+  return `<div class="indicators">${cards.map((c) => `
+    <div class="ind" style="${cssVars(c)}" title="${esc(c.name)}">
+      <div class="ind-top"><span>${c.emoji}</span><span>${esc(c.name)}</span><span class="val">${c.indicator}</span></div>
+      <div class="ind-track"><div class="ind-fill" style="width:${c.indicator}%"></div></div>
+    </div>`).join("")}</div>`;
+}
+
+// ---------- pantalla de ingreso con QR ----------
+function lobbyHtml(d, qrSrc) {
+  const a = d.activity;
+  const parts = d.participants || [];
+  const shortUrl = a.join_url.replace(/^https?:\/\//, "");
+  const byRole = d.progress.profiles.map((p) => {
+    const names = parts.filter((x) => x.profile === p.profile).map((x) => esc(x.name));
+    return `<div class="lobby-role" style="${cssVars(p)}">
+      <div class="lobby-role-head">${p.emoji} ${esc(p.name)} <b>${names.length}</b></div>
+      <div class="lobby-names">${names.join(" · ") || "<span class='muted'>—</span>"}</div></div>`;
+  }).join("");
+  return `<div class="lobby">
+    <div class="lobby-qr"><img src="${qrSrc}" alt="Código QR para unirse"></div>
+    <div class="lobby-info">
+      <h1>${esc(a.name)}</h1>
+      <p class="muted">Escanea el código o entra a</p>
+      <div class="lobby-url">${esc(shortUrl)}</div>
+      <p class="muted">Código: <b class="lobby-code">${esc(a.code)}</b></p>
+      <div class="lobby-count">${plural(parts.length, "persona unida", "personas unidas")}</div>
+      <div class="lobby-roles">${byRole}</div>
+    </div></div>`;
+}
+
+// Tablero completo: fase arriba, pasos, grilla 2x2, indicadores abajo.
+function boardHtml(d, opts = {}) {
+  const a = d.activity;
+  if (a.status === "lobby" || a.show_qr) return lobbyHtml(d, opts.qrSrc);
+  if (a.status === "finished") {
+    return `<div class="waiting"><h1>🏁 Fin del ejercicio</h1><p>${esc(a.name)}</p></div>`;
+  }
+  if (!d.slide) return `${phasesHtml(null)}<div class="waiting">No hay ninguna diapositiva seleccionada.</div>`;
+  const s = d.slide;
+  return `${phasesHtml(s.category)}
+    <div class="board-meta">
+      <div class="board-title">${s.title ? esc(s.title) : esc(s.category)} <span class="muted">${s.index}/${s.total}</span></div>
+      <div class="board-step">${stepsHtml(d.step)} ${timerHtml(d.deadline)}</div>
+    </div>
+    <div class="grid2">${d.cards.map((c) => cardHtml(c, d.step, opts)).join("")}</div>
+    ${indicatorsHtml(d.cards)}`;
+}
+
+// ---------- polling ----------
+// Solo re-renderiza cuando cambian los datos (sin contar la hora del servidor).
+function poll(url, onData, intervalMs = 1500) {
+  let last = null, timer = null, running = false;
+  async function tick() {
+    if (running) return;
+    running = true;
+    clearTimeout(timer);
+    try {
+      const r = await fetch(url, { credentials: "same-origin", cache: "no-store" });
+      if (r.status === 401) { location.href = "/admin/login"; return; }
+      if (r.ok) {
+        const d = await r.json();
+        if (d.now) syncClock(d.now);
+        delete d.now;
+        const key = JSON.stringify(d);
+        if (key !== last) { last = key; onData(d); }
+      }
+    } catch (e) { /* red caída: se reintenta */ }
+    running = false;
+    timer = setTimeout(tick, intervalMs);
+  }
+  tick();
+  return { force() { last = null; running = false; tick(); } };
+}
+
+async function postJSON(url, body) {
+  const r = await fetch(url, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+  let data = {};
+  try { data = await r.json(); } catch (e) { /* sin cuerpo */ }
+  return { ok: r.ok, status: r.status, data };
+}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Resultados · {{ act.name }}{% endblock %}
+{% block body %}
+{% include "_admin_topbar.html" %}
+<main class="wrap">
+  <section class="panel">
+    <div class="row-between">
+      <h2>Resultados por persona <span class="muted small">· {{ act.name }}</span></h2>
+      <a class="btn btn-sm" href="/admin/a/{{ act.id }}/resultados.csv">⬇️ Descargar CSV</a>
+    </div>
+    {% if act.status == 'finished' %}<p class="muted">Ejercicio finalizado{% if act.finished_at %} el {{ act.finished_at.strftime('%d-%m-%Y %H:%M') }} UTC{% endif %}.</p>{% endif %}
+    {% if not rows %}<p class="muted">Nadie se ha unido a esta actividad.</p>{% else %}
+    <div class="table-scroll">
+    <table class="progress-table">
+      <thead><tr>
+        <th>Nombre</th><th>Rol</th>
+        <th class="num">Sugirió</th><th class="num">No sugirió</th><th class="num">Su alternativa ganó</th>
+        <th class="num">Votó</th><th class="num">No votó</th>
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr style="--c:{{ PROFILES[r.profile].color }}">
+          <td>{{ r.name }}</td>
+          <td><span class="dot"></span>{{ PROFILES[r.profile].emoji }} {{ r.profile_name }}</td>
+          <td class="num">{{ r.suggested }}</td><td class="num">{{ r.not_suggested }}</td><td class="num">{{ r.wins }}</td>
+          <td class="num">{{ r.voted }}</td><td class="num">{{ r.not_voted }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="muted small">«No sugirió»: le tocó proponer y no escribió nada. «No votó»: podía votar (estaba conectada y no había propuesto) y no votó. En caso de empate, todas las alternativas con más votos cuentan como ganadoras.</p>
+    {% endif %}
+  </section>
+</main>
+{% endblock %}

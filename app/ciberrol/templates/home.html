@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block body_class %}participant{% endblock %}
+{% block body %}
+<main class="wrap">
+  <form class="panel login-box" method="get" action="/">
+    <h1>🛡️ Ciberrol</h1>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <label for="code">Código de la actividad</label>
+    <input id="code" type="text" name="code" maxlength="12" autocomplete="off" autocapitalize="characters" required autofocus
+           style="text-transform:uppercase;font-size:1.6rem;letter-spacing:.2em;text-align:center">
+    <p><button class="btn-primary btn-block" type="submit">Entrar</button></p>
+  </form>
+</main>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ act.name }} · Presentación{% endblock %}
+{% block body_class %}present{% endblock %}
+{% block body %}
+<main class="wrap">
+  <div id="board"><div class="waiting">Cargando…</div></div>
+  <div id="progress" class="present-progress"></div>
+</main>
+{% endblock %}
+{% block scripts %}
+<script>
+  const ACT = {{ act.id }};
+  const board = document.getElementById("board");
+  const progress = document.getElementById("progress");
+  poll(`/admin/api/a/${ACT}/live`, (d) => {
+    board.innerHTML = boardHtml(d, { qrSrc: `/admin/a/${ACT}/qr.svg` });
+    const t = d.progress.totals;
+    const running = d.activity.status === "running" && !d.activity.show_qr;
+    if (running && d.step === "propose") progress.textContent = `✍️ Propuestas enviadas: ${t.submitted} de ${t.proposers}`;
+    else if (running && d.step === "vote") progress.textContent = `🗳️ Han votado ${t.voted} · faltan ${t.pending}`;
+    else progress.textContent = "";
+  }, 1000);
+</script>
+{% endblock %}

@@ -76,6 +76,29 @@ En la línea de tiempo: **Exportar diapositivas** descarga un JSON; **Importar**
 - `COOKIE_SECURE=true` si usas HTTPS.
 - `TRUSTED_PROXIES`: proxies cuyos `X-Forwarded-*` se respetan (por defecto, redes privadas).
 
+### Producción con caddy-docker-proxy
+
+`docker-compose.prod.yml` no trae Caddy: publica la app en la red externa del proxy mediante labels.
+
+```bash
+# .env: DOMAIN=rol.midominio.cl, POSTGRES_PASSWORD=..., (opcional) CADDY_NETWORK=caddy
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml logs app | grep -A4 "CUENTA ADMIN"
+```
+
+- `PUBLIC_URL` toma `https://$DOMAIN` y las cookies quedan como `Secure`.
+- La app está en dos redes (la del proxy y la interna con Postgres). Si el proxy no tiene
+  `CADDY_INGRESS_NETWORKS` configurado, podría elegir la IP equivocada; configúralo con el nombre de su red.
+- **Con Cloudflare (proxy naranja)** usa el modo SSL **Full (strict)**. En modo *Flexible* Cloudflare
+  conecta por HTTP, Caddy redirige a HTTPS y se produce un bucle de redirecciones infinito.
+
+### Caché (Cloudflare u otros CDN)
+
+La app envía `Cache-Control: no-store` y `Cloudflare-CDN-Cache-Control: no-store` en HTML y API, y en los
+estáticos `no-cache` (el navegador revalida con ETag). Los JS/CSS se enlazan con un hash de su contenido
+(`?v=…`), así que cada versión nueva usa URLs nuevas. Si tienes una regla de Cloudflare tipo *Cache Everything*
+con *Edge TTL* forzado, quítala o exclúyela para este dominio (esas reglas ignoran los encabezados del origen).
+
 ### Detrás de otro proxy reverso (nginx, Traefik, Cloudflare…)
 
 Si otro proxy ya termina HTTPS y reenvía a este servidor:

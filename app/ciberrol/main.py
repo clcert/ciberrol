@@ -1,5 +1,6 @@
 import asyncio
 import csv
+import hashlib
 import io
 import json
 import os
@@ -57,8 +58,44 @@ app.add_middleware(
     https_only=os.environ.get("COOKIE_SECURE", "false").lower() == "true",
 )
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+
+
+# --- Evitar que Cloudflare (u otro CDN/proxy) guarde en caché el front ---------------------
+# HTML, API y QR: nunca se guardan. Estáticos: el navegador revalida siempre (ETag → 304) y
+# los CDN no los guardan. Cloudflare respeta especialmente Cloudflare-CDN-Cache-Control.
+NO_STORE = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+    "CDN-Cache-Control": "no-store",
+    "Cloudflare-CDN-Cache-Control": "no-store",
+}
+STATIC_REVALIDATE = {
+    "Cache-Control": "no-cache",
+    "CDN-Cache-Control": "no-store",
+    "Cloudflare-CDN-Cache-Control": "no-store",
+}
+
+
+@app.middleware("http")
+async def no_cdn_cache(request: Request, call_next):
+    response = await call_next(request)
+    headers = STATIC_REVALIDATE if request.url.path.startswith("/static/") else NO_STORE
+    for k, v in headers.items():
+        response.headers[k] = v
+    return response
+
+
+_asset_versions: dict[str, str] = {}
+
+
+def asset(path: str) -> str:
+    """URL de un archivo estático con un hash de su contenido (cambia con cada versión)."""
+    if path not in _asset_versions:
+        _asset_versions[path] = hashlib.sha256((BASE_DIR / "static" / path).read_bytes()).hexdigest()[:12]
+    return f"/static/{path}?v={_asset_versions[path]}"
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
-templates.env.globals.update(CONTEXT_CARD=CONTEXT_CARD, PROFILES=PROFILES, CATEGORIES=CATEGORIES, MAX_ALTERNATIVES=MAX_ALTERNATIVES)
+templates.env.globals.update(asset=asset, CONTEXT_CARD=CONTEXT_CARD, PROFILES=PROFILES, CATEGORIES=CATEGORIES, MAX_ALTERNATIVES=MAX_ALTERNATIVES)
 
 
 def join_url(request: Request, act: Activity) -> str:

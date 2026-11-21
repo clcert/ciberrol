@@ -25,6 +25,20 @@
   </section>
 
   <section class="panel">
+    <h2>⏱️ Tiempos de cada paso</h2>
+    <form id="timers" class="timers-form">
+      <div><label for="discuss_seconds">1. Escenario y discusión (s, 0 = sin contador)</label>
+        <input id="discuss_seconds" type="number" name="discuss_seconds" min="0" max="3600" value="{{ act.discuss_seconds }}"></div>
+      <div><label for="propose_seconds">2. Propuestas (s)</label>
+        <input id="propose_seconds" type="number" name="propose_seconds" min="5" max="3600" value="{{ act.propose_seconds }}"></div>
+      <div><label for="vote_seconds">3. Votación (s)</label>
+        <input id="vote_seconds" type="number" name="vote_seconds" min="5" max="3600" value="{{ act.vote_seconds }}"></div>
+      <div><button class="btn-primary" type="submit">Guardar tiempos</button></div>
+    </form>
+    <p class="muted small" id="timers-note" style="margin-bottom:0">Valen para todas las diapositivas. Durante un paso puedes pausar o sumar 15 s desde los controles de arriba.</p>
+  </section>
+
+  <section class="panel">
     <h2>Diapositiva actual</h2>
     <div id="board"><div class="waiting">Cargando…</div></div>
   </section>
@@ -56,10 +70,11 @@
         <div class="tl-item" id="slide-{{ s.id }}" data-slide-id="{{ s.id }}">
           <div class="t">
             {{ s.title or ('Diapositiva ' ~ loop.index) }}
-            <div class="muted small">{{ s.num_alternatives }} alt. · {{ s.propose_seconds }} s propuestas · {{ s.vote_seconds }} s votación</div>
+            <div class="muted small">{{ s.num_alternatives }} alternativa(s) por rol</div>
           </div>
           <div class="actions">
-            <button class="btn-sm btn-primary" type="button" data-goto="{{ s.id }}">Mostrar</button>
+            <button class="btn-sm" type="button" data-preview="{{ s.id }}" title="Ver sin cambiar lo que ven los participantes">👁️ Vista previa</button>
+            <button class="btn-sm btn-primary" type="button" data-goto="{{ s.id }}" title="Mostrar a los participantes">Mostrar</button>
             <a class="btn btn-sm" href="/admin/a/{{ act.id }}/slides/{{ s.id }}">Editar</a>
             <form class="inline" method="post" action="/admin/a/{{ act.id }}/slides/{{ s.id }}/move"><input type="hidden" name="direction" value="up"><button class="btn-sm" type="submit" title="Subir" {% if loop.first %}disabled{% endif %}>↑</button></form>
             <form class="inline" method="post" action="/admin/a/{{ act.id }}/slides/{{ s.id }}/move"><input type="hidden" name="direction" value="down"><button class="btn-sm" type="submit" title="Bajar" {% if loop.last %}disabled{% endif %}>↓</button></form>
@@ -74,6 +89,21 @@
     </div>
   </section>
 </main>
+
+<div id="preview" class="modal hidden" role="dialog" aria-modal="true" aria-label="Vista previa de diapositiva">
+  <div class="modal-box panel">
+    <div class="row-between" style="margin-bottom:10px">
+      <h2 style="margin:0">👁️ Vista previa <span class="preview-badge">solo tú la ves</span></h2>
+      <div class="controls">
+        <button type="button" id="pv-prev" title="Anterior (←)">◀</button>
+        <button type="button" id="pv-next" title="Siguiente (→)">▶</button>
+        <button type="button" class="btn-primary" id="pv-show">📽️ Mostrar a participantes</button>
+        <button type="button" id="pv-close" title="Cerrar (Esc)">✕ Cerrar</button>
+      </div>
+    </div>
+    <div id="pv-board"></div>
+  </div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>window.CIBERROL_ACT = {{ act.id }};</script>

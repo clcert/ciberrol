@@ -47,6 +47,11 @@ STEP_PROPOSE = "propose"      # 2. personas elegidas proponen (con tiempo)
 STEP_PROPOSED = "proposed"    # 2b. propuestas cerradas, esperando que el admin inicie la votación
 STEP_VOTE = "vote"            # 3. votación (con tiempo)
 STEP_RESULTS = "results"      # 4. resultados
+TIMED_STEPS = (STEP_TEXTS, STEP_PROPOSE, STEP_VOTE)
+
+DEFAULT_DISCUSS_SECONDS = 120
+DEFAULT_STEP_SECONDS = 60
+NO_PROFILE = ""               # participante aún sin rol asignado
 
 
 class Setting(Base):
@@ -81,6 +86,14 @@ class Activity(Base):
     split_contexts: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     # Rotación de quién propone, por rol: {perfil: {"queue": [pid...], "used": [pid...]}}
     rotation: Mapped[dict] = mapped_column(JSONB, default=dict)
+    # Roles por asignar: lo que queda de la permutación actual de roles (asignación automática)
+    role_deck: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+    # Tiempos de cada paso (segundos), comunes a todas las diapositivas. 0 en discusión = sin contador
+    discuss_seconds: Mapped[int] = mapped_column(Integer, default=DEFAULT_DISCUSS_SECONDS, server_default=str(DEFAULT_DISCUSS_SECONDS))
+    propose_seconds: Mapped[int] = mapped_column(Integer, default=DEFAULT_STEP_SECONDS, server_default=str(DEFAULT_STEP_SECONDS))
+    vote_seconds: Mapped[int] = mapped_column(Integer, default=DEFAULT_STEP_SECONDS, server_default=str(DEFAULT_STEP_SECONDS))
+    # Temporizador en pausa: milisegundos que quedaban (deadline queda en NULL mientras tanto)
+    paused_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -112,6 +125,7 @@ class Slide(Base):
     q_legal: Mapped[str] = mapped_column(Text, default="", server_default="")
     q_tecnico: Mapped[str] = mapped_column(Text, default="", server_default="")
     num_alternatives: Mapped[int] = mapped_column(Integer, default=3)
+    # Obsoletos: los tiempos ahora son de la actividad (se mantienen por compatibilidad con la BD)
     propose_seconds: Mapped[int] = mapped_column(Integer, default=60)
     vote_seconds: Mapped[int] = mapped_column(Integer, default=60)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -150,6 +164,8 @@ class Proposal(Base):
     seq: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text, default="")
     submitted: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Ganadora elegida por el admin para desempatar
+    chosen: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     participant: Mapped[Participant] = relationship()

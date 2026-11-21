@@ -50,10 +50,18 @@ Los textos de las diapositivas (contexto, escenarios y preguntas) admiten markdo
 
 1. El admin crea la actividad (obtiene un código corto) y sus diapositivas en las fases
    **Preparar → Contener → Mitigar → Recuperar → Evaluar**. Cada diapositiva tiene un contexto general y, por rol, un escenario, una pregunta
-   (se muestra bajo el escenario) y un indicador 0–100; el número de alternativas (por defecto 3) y los tiempos para proponer y votar (por defecto 60 s).
-2. La presentación muestra el **QR** y la URL corta; la gente se une con su nombre y rol.
-3. **Comenzar ejercicio** → primera diapositiva. Cada diapositiva tiene 4 pasos:
-   1. **Escenario**: se muestran los 4 textos (cada móvil ve el de su rol).
+   (se muestra bajo el escenario) y un indicador 0–100, además del número de alternativas (por defecto 3).
+   Los **tiempos** son de la actividad, no de cada diapositiva: discusión (por defecto 120 s; 0 = sin contador),
+   propuestas y votación (por defecto 60 s). Se fijan al crearla y se cambian en el panel (*Tiempos de cada paso*).
+2. La presentación muestra el **QR** y la URL corta; la gente se une solo con su nombre (no se permiten
+   nombres repetidos en la misma actividad, sin distinguir mayúsculas).
+3. **Asignar roles** (panel, antes de comenzar): se recorre una permutación aleatoria de los 4 roles asignando
+   uno por persona; al acabarse se baraja otra, así los roles quedan equilibrados. *Reasignar roles a todos*
+   rehace la asignación; *Asignar rol a personas nuevas* solo a quienes llegaron después. Al comenzar, quien no
+   tenga rol recibe uno automáticamente, igual que quien se une con el ejercicio en curso.
+4. **Comenzar ejercicio** → primera diapositiva. Cada diapositiva tiene 4 pasos:
+   1. **Escenario y discusión**: se muestran los 4 textos (cada móvil ve el de su rol) con un contador del
+      tiempo de discusión. Al llegar a cero no avanza solo: el admin inicia las propuestas.
    2. **Propuestas**: por cada rol se eligen N personas (N = número de alternativas) siguiendo una
       permutación aleatoria por rol (nadie repite hasta que todos los de su rol hayan propuesto). Tienen el
       tiempo configurado para escribir; el texto se guarda mientras escriben y, al acabarse el tiempo, se toma lo
@@ -63,8 +71,21 @@ Los textos de las diapositivas (contexto, escenarios y preguntas) admiten markdo
       cuando todos votaron.
    4. **Resultados**: gráfico con votos y porcentaje por alternativa en cada card; todos ven los resultados de
       las 4 tarjetas (en el teléfono, la de su rol primero).
-4. **Finalizar ejercicio** → el admin ve por persona: cuántas veces sugirió, no sugirió (le tocó y no escribió),
-   su alternativa ganó (empates cuentan), votó y no votó (podía y no lo hizo).
+      Si hay **empate**, el panel muestra *Elegir como ganadora* en las alternativas empatadas; la elegida queda
+      marcada con 🏆 para todos (si no se elige, todas las empatadas cuentan como ganadoras).
+5. **Finalizar ejercicio** → el admin ve por persona: cuántas veces sugirió, no sugirió (le tocó y no escribió),
+   su alternativa ganó (empates sin desempatar cuentan), votó y no votó (podía y no lo hizo).
+
+**Temporizador:** durante la discusión, las propuestas o la votación el panel permite **⏸️ Pausar / ▶️ Reanudar**
+y **➕ 15 s**. La presentación y los teléfonos muestran el contador (en pausa aparece ⏸).
+
+**Vista previa:** en la línea de tiempo, *👁️ Vista previa* muestra cualquier diapositiva (con sus propuestas y
+resultados si ya se jugó) solo al admin, sin cambiar lo que ven la presentación y los teléfonos; con ◀ ▶ se
+recorren las demás y *Mostrar a participantes* la pone en pantalla.
+
+**Diapositivas anteriores:** en el teléfono, *📜 Anteriores* muestra las diapositivas ya jugadas con el
+escenario de su rol, su propuesta, su voto y los resultados. Si le toca proponer o votar, vuelve solo a la
+diapositiva actual.
 
 **Contextos separados** (activado por defecto): la presentación muestra solo el contexto general y los
 teléfonos solo el escenario de su rol. En los pasos 1 y 2 la presentación muestra únicamente el contexto general a

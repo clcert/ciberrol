@@ -288,3 +288,21 @@ label.question { display: block; font-size: 1rem; margin: .8em 0 .35em; }
 .board-grid.context-only { grid-template-rows: auto; }
 body.present .board-grid.context-only { grid-template-rows: minmax(55vh, auto); }
 body.present .context-only .card-context { font-size: clamp(1.2rem, 2.3vw, 2.6rem); padding: 2.2vh 2.4vw; }
+
+/* temporizador en pausa */
+.timer.paused { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); }
+
+/* vista previa de diapositiva (admin) */
+.modal { position: fixed; inset: 0; z-index: 50; background: rgba(2,6,23,.75); overflow-y: auto; padding: 3vh 16px; }
+.modal-box { max-width: 1200px; margin: 0 auto; }
+.preview-badge { background: #f59e0b; color: #1c1917; font-size: .8rem; padding: .15em .6em; border-radius: 999px; font-weight: 700; }
+
+/* configuración de tiempos */
+.timers-form { display: grid; grid-template-columns: repeat(3, 1fr) auto; gap: 10px; align-items: end; }
+.timers-form label { margin-top: 0; }
+@media (max-width: 700px) { .timers-form { grid-template-columns: 1fr; } }
+
+/* historial del participante */
+.history details { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; }
+.history summary { cursor: pointer; padding: .7em .9em; font-weight: 700; }
+.history .hist-body { padding: 0 .9em .9em; display: grid; gap: 10px; }

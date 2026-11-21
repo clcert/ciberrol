@@ -17,6 +17,8 @@ from .models import (
     MAX_ALTERNATIVES,
     PROFILE_KEYS,
     PROFILES,
+    NO_PROFILE,
+    STATUS_FINISHED,
     STATUS_RUNNING,
     STEP_PROPOSE,
     STEP_PROPOSED,
@@ -102,6 +104,74 @@ def lock_activity(db: Session, activity_id: int) -> Activity:
     )
 
 
+# --------------------------------------------------------------------------- temporizador
+
+
+def set_timer(act: Activity, seconds: int) -> None:
+    """Inicia una cuenta regresiva (o la quita si seconds <= 0)."""
+    act.paused_ms = None
+    act.deadline = utcnow() + timedelta(seconds=seconds) if seconds > 0 else None
+
+
+def clear_timer(act: Activity) -> None:
+    act.deadline = None
+    act.paused_ms = None
+
+
+def pause_timer(act: Activity) -> None:
+    if act.deadline is not None:
+        act.paused_ms = max(0, int((act.deadline - utcnow()).total_seconds() * 1000))
+        act.deadline = None
+
+
+def resume_timer(act: Activity) -> None:
+    if act.paused_ms is not None:
+        act.deadline = utcnow() + timedelta(milliseconds=act.paused_ms)
+        act.paused_ms = None
+
+
+def add_time(act: Activity, seconds: int) -> None:
+    if act.paused_ms is not None:
+        act.paused_ms += seconds * 1000
+    else:
+        now = utcnow()
+        act.deadline = max(act.deadline or now, now) + timedelta(seconds=seconds)
+
+
+def timer_payload(act: Activity) -> dict:
+    return {"deadline": ms(act.deadline), "paused_ms": act.paused_ms}
+
+
+# --------------------------------------------------------------------------- roles
+
+
+def next_role(act: Activity) -> str:
+    """Siguiente rol de la permutación actual; al acabarse se baraja una nueva."""
+    deck = [r for r in (act.role_deck or []) if r in PROFILES]
+    if not deck:
+        deck = random.sample(PROFILE_KEYS, len(PROFILE_KEYS))
+    role = deck.pop(0)
+    act.role_deck = deck
+    return role
+
+
+def assign_roles(db: Session, act: Activity, only_missing: bool) -> int:
+    """Asigna roles recorriendo permutaciones de los 4 roles (todos, o solo a quienes no tienen)."""
+    if not only_missing:
+        act.role_deck = []
+    n = 0
+    for part in db.scalars(
+        select(Participant).where(Participant.activity_id == act.id).order_by(Participant.created_at, Participant.id)
+    ):
+        if only_missing and part.profile in PROFILES:
+            continue
+        part.profile = next_role(act)
+        n += 1
+    if not only_missing:
+        act.rotation = {}  # la rotación de proponentes depende de los roles
+    return n
+
+
 # --------------------------------------------------------------------------- máquina de pasos
 
 
@@ -143,7 +213,7 @@ def advance_if_due(db: Session, act: Activity) -> Activity:
             act.step = STEP_PROPOSED
         else:
             act.step = STEP_RESULTS
-        act.deadline = None
+        clear_timer(act)
     db.commit()
     return act
 
@@ -211,7 +281,7 @@ def start_propose(db: Session, act: Activity) -> None:
             seq += 1
     act.rotation = rotation
     act.step = STEP_PROPOSE
-    act.deadline = utcnow() + timedelta(seconds=slide.propose_seconds)
+    set_timer(act, act.propose_seconds)
 
 
 def _vote_context(db: Session, slide_id: int):
@@ -226,6 +296,7 @@ def start_vote(db: Session, act: Activity) -> None:
     slide = db.get(Slide, act.current_slide_id)
     db.execute(delete(Vote).where(Vote.slide_id == slide.id))
     db.execute(delete(VoteEligibility).where(VoteEligibility.slide_id == slide.id))
+    db.query(Proposal).filter(Proposal.slide_id == slide.id).update({"chosen": False})
     roles, proposers = _vote_context(db, slide.id)
     for part in db.scalars(
         select(Participant).where(Participant.activity_id == act.id, Participant.last_seen > online_cutoff())
@@ -233,7 +304,7 @@ def start_vote(db: Session, act: Activity) -> None:
         if part.profile in roles and part.id not in proposers:
             db.add(VoteEligibility(slide_id=slide.id, participant_id=part.id))
     act.step = STEP_VOTE
-    act.deadline = utcnow() + timedelta(seconds=slide.vote_seconds)
+    set_timer(act, act.vote_seconds)
 
 
 def can_vote(db: Session, slide_id: int, part: Participant) -> bool:
@@ -249,15 +320,22 @@ def ensure_eligible(db: Session, slide_id: int, participant_id: str) -> None:
     )
 
 
+def played_step(db: Session, slide_id: int) -> str:
+    """Paso en que quedó una diapositiva según lo que ya ocurrió en ella."""
+    if db.scalar(select(func.count()).select_from(VoteEligibility).where(VoteEligibility.slide_id == slide_id)):
+        return STEP_RESULTS
+    if db.scalar(select(func.count()).select_from(Proposal).where(Proposal.slide_id == slide_id)):
+        return STEP_PROPOSED
+    return STEP_TEXTS
+
+
 def goto_slide(db: Session, act: Activity, slide_id: int) -> None:
     act.current_slide_id = slide_id
-    act.deadline = None
-    if db.scalar(select(func.count()).select_from(VoteEligibility).where(VoteEligibility.slide_id == slide_id)):
-        act.step = STEP_RESULTS
-    elif db.scalar(select(func.count()).select_from(Proposal).where(Proposal.slide_id == slide_id)):
-        act.step = STEP_PROPOSED
+    act.step = played_step(db, slide_id)
+    if act.step == STEP_TEXTS:
+        set_timer(act, act.discuss_seconds)  # discusión del paso 1
     else:
-        act.step = STEP_TEXTS
+        clear_timer(act)
 
 
 def reset_slide(db: Session, act: Activity) -> None:
@@ -265,7 +343,22 @@ def reset_slide(db: Session, act: Activity) -> None:
     db.execute(delete(VoteEligibility).where(VoteEligibility.slide_id == sid))
     db.execute(delete(Proposal).where(Proposal.slide_id == sid))
     act.step = STEP_TEXTS
-    act.deadline = None
+    set_timer(act, act.discuss_seconds)
+
+
+def choose_winner(db: Session, act: Activity, proposal_id: int) -> None:
+    """Desempate: el admin elige la ganadora entre las alternativas empatadas de un rol."""
+    prop = db.get(Proposal, proposal_id)
+    if prop is None or prop.slide_id != act.current_slide_id or act.step != STEP_RESULTS:
+        raise ValueError("Alternativa inválida")
+    alts = [p for p in _proposals_by_profile(db, prop.slide_id).get(prop.profile, []) if p.text.strip()]
+    counts = _vote_counts(db, prop.slide_id)
+    top = max(counts.get(a.id, 0) for a in alts)
+    tied = [a for a in alts if counts.get(a.id, 0) == top]
+    if len(tied) < 2 or prop not in tied:
+        raise ValueError("Solo se puede elegir entre alternativas empatadas")
+    for a in alts:
+        a.chosen = a.id == prop.id
 
 
 # --------------------------------------------------------------------------- payloads
@@ -295,6 +388,8 @@ def _alternatives(plist: list[Proposal], counts: dict | None, authors: bool) -> 
     alts = [p for p in plist if p.text.strip()]
     total = sum(counts.get(a.id, 0) for a in alts) if counts is not None else 0
     top = max([counts.get(a.id, 0) for a in alts], default=0) if counts is not None else 0
+    n_top = sum(1 for a in alts if counts.get(a.id, 0) == top) if counts is not None else 0
+    any_chosen = any(a.chosen for a in alts)
     out = []
     for i, a in enumerate(alts):
         d = {"id": a.id, "letter": LETTERS[i] if i < len(LETTERS) else str(i + 1), "text": a.text}
@@ -302,7 +397,14 @@ def _alternatives(plist: list[Proposal], counts: dict | None, authors: bool) -> 
             d["author"] = a.participant.name
         if counts is not None:
             n = counts.get(a.id, 0)
-            d.update(count=n, pct=round(100 * n / total) if total else 0, winner=n > 0 and n == top)
+            tie = n_top >= 2 and n == top
+            d.update(
+                count=n,
+                pct=round(100 * n / total) if total else 0,
+                winner=a.chosen if any_chosen else (n > 0 and n == top),
+                tie=tie,
+                chosen=a.chosen,
+            )
         out.append(d)
     return out, total
 
@@ -316,8 +418,6 @@ def _slide_header(slides: list[Slide], slide: Slide) -> dict:
         "index": idx + 1,
         "total": len(slides),
         "is_last": idx == len(slides) - 1,
-        "propose_seconds": slide.propose_seconds,
-        "vote_seconds": slide.vote_seconds,
         "num_alternatives": slide.num_alternatives,
     }
 
@@ -332,6 +432,9 @@ def activity_header(act: Activity, join_url: str) -> dict:
         "show_authors": act.show_authors,
         "split_contexts": act.split_contexts,
         "join_url": join_url,
+        "discuss_seconds": act.discuss_seconds,
+        "propose_seconds": act.propose_seconds,
+        "vote_seconds": act.vote_seconds,
     }
 
 
@@ -340,17 +443,30 @@ def board_payload(db: Session, act: Activity, join_url: str, admin_live: bool) -
     out = {
         "activity": activity_header(act, join_url),
         "step": act.step,
-        "deadline": ms(act.deadline),
+        **timer_payload(act),
         "now": ms(utcnow()),
         "slide": None,
     }
     slide = db.get(Slide, act.current_slide_id) if act.current_slide_id else None
     if slide is None or act.status != STATUS_RUNNING:
         return out
-    out["slide"] = _slide_header(ordered_slides(db, act.id), slide)
-    out["context"] = {**CONTEXT_CARD, "text": slide.text_general}
+    out.update(slide_board(db, act, slide, act.step, admin_live))
+    return out
 
-    step = act.step
+
+def preview_payload(db: Session, act: Activity, slide: Slide, join_url: str) -> dict:
+    """Vista previa de una diapositiva para el admin, sin cambiar lo que ven los demás."""
+    step = act.step if act.current_slide_id == slide.id and act.status == STATUS_RUNNING else played_step(db, slide.id)
+    header = {**activity_header(act, join_url), "status": STATUS_RUNNING, "show_qr": False}
+    return {"activity": header, "step": step, "deadline": None, "paused_ms": None, "preview": True,
+            **slide_board(db, act, slide, step, admin_live=True)}
+
+
+def slide_board(db: Session, act: Activity, slide: Slide, step: str, admin_live: bool) -> dict:
+    out = {
+        "slide": _slide_header(ordered_slides(db, act.id), slide),
+        "context": {**CONTEXT_CARD, "text": slide.text_general},
+    }
     names = admin_live or act.show_authors  # el panel admin siempre ve los nombres
     hide_role_texts = act.split_contexts and not admin_live  # textos de rol solo en los teléfonos
     props = _proposals_by_profile(db, slide.id)
@@ -417,7 +533,7 @@ def progress_payload(db: Session, act: Activity) -> dict:
                 select(Vote.profile, func.count()).where(Vote.slide_id == sid).group_by(Vote.profile)
             ).all()
         )
-    out = {"profiles": [], "totals": defaultdict(int)}
+    out = {"profiles": [], "totals": defaultdict(int), "unassigned": joined.get(NO_PROFILE, 0)}
     for p in PROFILE_KEYS:
         row = {
             "profile": p,
@@ -433,13 +549,15 @@ def progress_payload(db: Session, act: Activity) -> dict:
         out["profiles"].append(row)
         for k in ("joined", "online", "proposers", "submitted", "eligible", "voted", "pending"):
             out["totals"][k] += row[k]
+    out["totals"]["joined"] += out["unassigned"]
+    out["totals"]["online"] += online.get(NO_PROFILE, 0)
     return out
 
 
 def participants_list(db: Session, act: Activity) -> list[dict]:
     cutoff = online_cutoff()
     return [
-        {"name": p.name, "profile": p.profile, "online": p.last_seen > cutoff}
+        {"name": p.name, "profile": p.profile if p.profile in PROFILES else NO_PROFILE, "online": p.last_seen > cutoff}
         for p in db.scalars(
             select(Participant).where(Participant.activity_id == act.id).order_by(Participant.created_at)
         )
@@ -454,12 +572,13 @@ def participant_payload(db: Session, act: Activity, part: Participant) -> dict:
         "profiles": PROFILES,
         "activity": {"name": act.name, "status": act.status},
         "step": act.step,
-        "deadline": ms(act.deadline),
+        **timer_payload(act),
         "now": ms(utcnow()),
         "slide": None,
+        "has_history": bool(history_slides(db, act)) if part.profile in PROFILES else False,
     }
     slide = db.get(Slide, act.current_slide_id) if act.current_slide_id else None
-    if act.status != STATUS_RUNNING or slide is None:
+    if act.status != STATUS_RUNNING or slide is None or part.profile not in PROFILES:
         return out
     out["slide"] = _slide_header(ordered_slides(db, act.id), slide)
     # con split_contexts el contexto general va solo a la presentación
@@ -496,6 +615,54 @@ def participant_payload(db: Session, act: Activity, part: Participant) -> dict:
             ensure_eligible(db, slide.id, part.id)
             db.commit()
             out["can_vote"] = True
+    return out
+
+
+def history_slides(db: Session, act: Activity) -> list[Slide]:
+    """Diapositivas ya vistas: las anteriores a la actual y las que tuvieron propuestas.
+    La actual se excluye mientras el ejercicio está en curso (ya se ve en vivo)."""
+    if act.status not in (STATUS_RUNNING, STATUS_FINISHED) or not act.current_slide_id:
+        return []
+    slides = ordered_slides(db, act.id)
+    cur = next((i for i, s in enumerate(slides) if s.id == act.current_slide_id), -1)
+    played = set(db.scalars(select(Proposal.slide_id).where(Proposal.slide_id.in_([s.id for s in slides])).distinct()))
+    return [
+        s for i, s in enumerate(slides)
+        if (i < cur or s.id in played or (i == cur and act.status == STATUS_FINISHED))
+        and not (i == cur and act.status == STATUS_RUNNING)
+    ]
+
+
+def history_payload(db: Session, act: Activity, part: Participant) -> list[dict]:
+    """Diapositivas anteriores para un participante, con su propuesta, su voto y los resultados."""
+    p = part.profile
+    if p not in PROFILES:
+        return []
+    slides = ordered_slides(db, act.id)
+    out = []
+    for slide in history_slides(db, act):
+        step = played_step(db, slide.id)
+        props = _proposals_by_profile(db, slide.id)
+        counts = _vote_counts(db, slide.id) if step == STEP_RESULTS else None
+        mine = next((x for x in props.get(p, []) if x.participant_id == part.id), None)
+        my_vote = db.scalar(select(Vote.proposal_id).where(Vote.slide_id == slide.id, Vote.participant_id == part.id))
+        own_alts, _ = _alternatives(props.get(p, []), counts, authors=act.show_authors)
+        results = []
+        for rp in sorted(PROFILE_KEYS, key=lambda k: k != p):
+            ralts, rtotal = _alternatives(props.get(rp, []), counts, authors=act.show_authors)
+            card = {"profile": rp, **PROFILES[rp], "alternatives": ralts, "proposers": [], "mine": rp == p}
+            if counts is not None:
+                card["total_votes"] = rtotal
+            results.append(card)
+        out.append({
+            "slide": _slide_header(slides, slide),
+            "step": step,
+            "context": None if act.split_contexts else {**CONTEXT_CARD, "text": slide.text_general},
+            "card": {"profile": p, **PROFILES[p], "text": slide.text_for(p), "question": slide.question_for(p)},
+            "my_proposal": mine.text if mine else None,
+            "my_vote": next((a["letter"] for a in own_alts if a["id"] == my_vote), None),
+            "results": results,
+        })
     return out
 
 
@@ -538,17 +705,20 @@ def participant_stats(db: Session, activity_id: int) -> list[dict]:
     )
     # Ganadoras: la(s) propuesta(s) con más votos (>0) de cada rol en cada diapositiva.
     rows = db.execute(
-        select(Proposal.slide_id, Proposal.profile, Proposal.participant_id, func.count(Vote.id))
+        select(Proposal.slide_id, Proposal.profile, Proposal.participant_id, func.count(Vote.id), Proposal.chosen)
         .outerjoin(Vote, Vote.proposal_id == Proposal.id)
         .where(Proposal.participant_id.in_(pids), Proposal.text != "")
         .group_by(Proposal.id)
     ).all()
     top: dict[tuple, int] = defaultdict(int)
-    for sid, prof, _pid, n in rows:
+    decided: set[tuple] = set()  # (diapositiva, rol) con ganadora elegida por el admin
+    for sid, prof, _pid, n, chosen in rows:
         top[(sid, prof)] = max(top[(sid, prof)], n)
+        if chosen:
+            decided.add((sid, prof))
     wins: dict[str, int] = defaultdict(int)
-    for sid, prof, pid, n in rows:
-        if n > 0 and n == top[(sid, prof)]:
+    for sid, prof, pid, n, chosen in rows:
+        if chosen if (sid, prof) in decided else (n > 0 and n == top[(sid, prof)]):
             wins[pid] += 1
 
     return [
@@ -585,8 +755,6 @@ def export_slides(db: Session, act: Activity) -> dict:
                 "questions": {p: s.question_for(p) for p in PROFILE_KEYS},
                 "indicators": {p: s.indicator_for(p) for p in PROFILE_KEYS},
                 "num_alternatives": s.num_alternatives,
-                "propose_seconds": s.propose_seconds,
-                "vote_seconds": s.vote_seconds,
             }
             for s in ordered_slides(db, act.id)
         ],
@@ -626,8 +794,6 @@ def import_slides(db: Session, act: Activity, data: dict, replace: bool) -> int:
             title=str(item.get("title") or "")[:200],
             text_general=str(item.get("context") or "")[:5000],
             num_alternatives=clamp(item.get("num_alternatives"), 1, MAX_ALTERNATIVES, 3),
-            propose_seconds=clamp(item.get("propose_seconds"), 5, 600, 60),
-            vote_seconds=clamp(item.get("vote_seconds"), 5, 600, 60),
         )
         for p in PROFILE_KEYS:
             setattr(slide, f"text_{p}", str(texts.get(p) or "")[:5000])

@@ -22,9 +22,12 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import logic
 from .db import get_db, init_db
 from .models import (
+    DEFAULT_DISCUSS_SECONDS,
+    DEFAULT_STEP_SECONDS,
     CATEGORIES,
     CONTEXT_CARD,
     MAX_ALTERNATIVES,
+    NO_PROFILE,
     PROFILE_KEYS,
     PROFILES,
     STATUS_FINISHED,
@@ -34,6 +37,7 @@ from .models import (
     STEP_PROPOSED,
     STEP_TEXTS,
     STEP_VOTE,
+    TIMED_STEPS,
     Activity,
     AdminUser,
     Participant,
@@ -144,7 +148,6 @@ def home(request: Request, code: str | None = None):
 
 class JoinIn(BaseModel):
     name: str
-    profile: str
 
 
 @app.post("/api/a/{code}/join")
@@ -155,13 +158,24 @@ def join(code: str, body: JoinIn, request: Request, db: Session = Depends(get_db
     name = " ".join(body.name.split())[:60]
     if not name:
         raise HTTPException(400, "Escribe tu nombre")
-    if body.profile not in PROFILES:
-        raise HTTPException(400, "Perfil inválido")
     part = session_participant(request, db, act)
+    act = logic.lock_activity(db, act.id)  # serializa los ingresos para no duplicar nombres
+    taken = db.scalar(
+        select(Participant.id).where(
+            Participant.activity_id == act.id,
+            func.lower(Participant.name) == name.lower(),
+            Participant.id != (part.id if part else ""),
+        )
+    )
+    if taken:
+        db.rollback()
+        raise HTTPException(409, "Ese nombre ya está en uso en esta actividad. Prueba con otro (p. ej. agrega tu apellido).")
     if part is None:
-        part = Participant(id=str(uuid.uuid4()), activity_id=act.id)
+        part = Participant(id=str(uuid.uuid4()), activity_id=act.id, profile=NO_PROFILE)
         db.add(part)
-    part.name, part.profile = name, body.profile
+    part.name = name
+    if act.status == STATUS_RUNNING and part.profile not in PROFILES:
+        part.profile = logic.next_role(act)  # llegó tarde: toma el siguiente rol de la permutación
     part.last_seen = func.now()
     db.commit()
     parts = dict(request.session.get("parts", {}))
@@ -188,6 +202,15 @@ def participant_state(code: str, request: Request, db: Session = Depends(get_db)
     db.commit()
     act = logic.advance_if_due(db, act)
     return logic.participant_payload(db, act, part)
+
+
+@app.get("/api/a/{code}/history")
+def participant_history(code: str, request: Request, db: Session = Depends(get_db)):
+    act = get_activity_by_code(db, code)
+    part = session_participant(request, db, act)
+    if part is None:
+        raise HTTPException(400, "Primero únete a la actividad")
+    return {"slides": logic.history_payload(db, act, part)}
 
 
 class ProposalIn(BaseModel):
@@ -335,14 +358,24 @@ def create_activity(
     name: str = Form(...),
     hide_authors: bool = Form(False),
     split_contexts: bool = Form(False),
+    discuss_seconds: str = Form(""),
+    propose_seconds: str = Form(""),
+    vote_seconds: str = Form(""),
     db: Session = Depends(get_db),
     admin=Depends(require_admin),
 ):
     name = " ".join(name.split())[:200] or "Actividad"
-    act = Activity(name=name, code=logic.new_code(db), rotation={}, show_authors=not hide_authors, split_contexts=split_contexts)
+    act = Activity(name=name, code=logic.new_code(db), rotation={}, role_deck=[], show_authors=not hide_authors, split_contexts=split_contexts)
+    _apply_timers(act, discuss_seconds, propose_seconds, vote_seconds)
     db.add(act)
     db.commit()
     return RedirectResponse(f"/admin/a/{act.id}", status_code=303)
+
+
+def _apply_timers(act: Activity, discuss, propose, vote) -> None:
+    act.discuss_seconds = logic.clamp(discuss, 0, 3600, DEFAULT_DISCUSS_SECONDS)
+    act.propose_seconds = logic.clamp(propose, 5, 3600, DEFAULT_STEP_SECONDS)
+    act.vote_seconds = logic.clamp(vote, 5, 3600, DEFAULT_STEP_SECONDS)
 
 
 @app.post("/admin/activities/{activity_id}/delete")
@@ -392,8 +425,30 @@ def live(request: Request, activity_id: int, admin_view: bool = False, db: Sessi
     return out
 
 
+@app.get("/admin/api/a/{activity_id}/preview/{slide_id}")
+def preview(request: Request, activity_id: int, slide_id: int, db: Session = Depends(get_db), admin=Depends(require_admin)):
+    act = get_activity(db, activity_id)
+    slide = _get_slide(db, activity_id, slide_id)
+    return logic.preview_payload(db, act, slide, join_url(request, act))
+
+
+class TimersIn(BaseModel):
+    discuss_seconds: int
+    propose_seconds: int
+    vote_seconds: int
+
+
+@app.post("/admin/api/a/{activity_id}/timers")
+def save_timers(activity_id: int, body: TimersIn, db: Session = Depends(get_db), admin=Depends(require_admin)):
+    act = get_activity(db, activity_id)
+    _apply_timers(act, body.discuss_seconds, body.propose_seconds, body.vote_seconds)
+    db.commit()
+    return {"ok": True, "discuss_seconds": act.discuss_seconds, "propose_seconds": act.propose_seconds, "vote_seconds": act.vote_seconds}
+
+
 class ControlIn(BaseModel):
     slide_id: int | None = None
+    proposal_id: int | None = None
 
 
 @app.post("/admin/api/a/{activity_id}/control/{action}")
@@ -413,23 +468,31 @@ def control(activity_id: int, action: str, body: ControlIn | None = None, db: Se
         act.show_authors = not act.show_authors
     elif action == "toggle_split":
         act.split_contexts = not act.split_contexts
+    elif action in ("assign_roles", "assign_missing"):
+        if act.status != STATUS_LOBBY:
+            fail("Los roles se asignan antes de comenzar el ejercicio")
+        if not logic.assign_roles(db, act, only_missing=action == "assign_missing"):
+            fail("No hay participantes a quienes asignar rol")
     elif action == "start":
         if not ids:
             fail("La actividad no tiene diapositivas")
+        logic.assign_roles(db, act, only_missing=True)  # quienes aún no tienen rol
         act.status = STATUS_RUNNING
         act.show_qr = False
         logic.goto_slide(db, act, act.current_slide_id if act.current_slide_id in ids else ids[0])
     elif action == "finish":
         act.status = STATUS_FINISHED
-        act.deadline = None
+        logic.clear_timer(act)
         act.finished_at = logic.utcnow()
     elif action == "reopen":
+        logic.assign_roles(db, act, only_missing=True)
         act.status = STATUS_RUNNING
         if act.current_slide_id not in ids and ids:
             logic.goto_slide(db, act, ids[0])
     elif action == "goto":
         if not body or body.slide_id not in ids:
             fail("Diapositiva inválida")
+        logic.assign_roles(db, act, only_missing=True)
         act.status = STATUS_RUNNING
         act.show_qr = False
         logic.goto_slide(db, act, body.slide_id)
@@ -447,6 +510,22 @@ def control(activity_id: int, action: str, body: ControlIn | None = None, db: Se
         if act.step != STEP_PROPOSED:
             fail("La votación se inicia cuando terminan las propuestas")
         logic.start_vote(db, act)
+    elif action in ("pause", "resume", "add15"):
+        if act.step not in TIMED_STEPS or (act.deadline is None and act.paused_ms is None and action != "add15"):
+            fail("No hay un temporizador en curso")
+        if action == "pause":
+            logic.pause_timer(act)
+        elif action == "resume":
+            logic.resume_timer(act)
+        else:
+            logic.add_time(act, 15)
+    elif action == "choose_winner":
+        if not body or body.proposal_id is None:
+            fail("Falta la alternativa")
+        try:
+            logic.choose_winner(db, act, body.proposal_id)
+        except ValueError as e:
+            fail(str(e))
     elif action == "end_now":
         if act.step not in (STEP_PROPOSE, STEP_VOTE):
             fail("No hay un paso con tiempo en curso")
@@ -508,8 +587,6 @@ async def _save_slide(request: Request, db: Session, act: Activity, slide: Slide
     slide.title = (form.get("title") or "").strip()[:200]
     slide.text_general = (form.get("text_general") or "").strip()
     slide.num_alternatives = logic.clamp(form.get("num_alternatives"), 1, MAX_ALTERNATIVES, 3)
-    slide.propose_seconds = logic.clamp(form.get("propose_seconds"), 5, 600, 60)
-    slide.vote_seconds = logic.clamp(form.get("vote_seconds"), 5, 600, 60)
     for p in PROFILE_KEYS:
         setattr(slide, f"text_{p}", (form.get(f"text_{p}") or "").strip())
         setattr(slide, f"q_{p}", (form.get(f"q_{p}") or "").strip())
@@ -570,6 +647,7 @@ def present_slide(activity_id: int, slide_id: int, db: Session = Depends(get_db)
     _get_slide(db, activity_id, slide_id)
     act = logic.lock_activity(db, activity_id)
     if act.status != STATUS_RUNNING:
+        logic.assign_roles(db, act, only_missing=True)
         act.status = STATUS_RUNNING
         act.show_qr = False
     logic.goto_slide(db, act, slide_id)

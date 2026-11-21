@@ -1,14 +1,14 @@
 // Utilidades compartidas: reloj, temporizadores, fase/pasos, cards, QR, indicadores y polling.
 const CATEGORIES = ["Preparar", "Contener", "Mitigar", "Recuperar", "Evaluar"];
 const STEPS = [
-  { n: 1, label: "Escenario" },
+  { n: 1, label: "Escenario y discusión" },
   { n: 2, label: "Propuestas" },
   { n: 3, label: "Votación" },
   { n: 4, label: "Resultados" },
 ];
 const STEP_NUM = { texts: 1, propose: 2, proposed: 2, vote: 3, results: 4 };
 const STEP_LABEL = {
-  texts: "Escenario",
+  texts: "Escenario y discusión",
   propose: "Proponiendo",
   proposed: "Propuestas listas",
   vote: "Votación",
@@ -38,7 +38,11 @@ setInterval(() => {
   tickHooks.forEach((fn) => fn());
 }, 200);
 
-function timerHtml(deadline) {
+// pausedMs: milisegundos que quedaban cuando se pausó (el temporizador queda detenido)
+function timerHtml(deadline, pausedMs) {
+  if (pausedMs !== null && pausedMs !== undefined) {
+    return `<span class="timer paused" title="En pausa">⏸ ${Math.ceil(pausedMs / 1000)} s</span>`;
+  }
   if (!deadline) return "";
   return `<span class="timer" data-deadline="${deadline}">${secondsLeft(deadline)} s</span>`;
 }
@@ -61,13 +65,16 @@ function altsHtml(alts) {
     <li class="alt"><span class="letter">${esc(a.letter)}</span>
       <span>${esc(a.text)}${a.author ? ` <span class="author">— ${esc(a.author)}</span>` : ""}</span></li>`).join("")}</ul>`;
 }
-function resultsHtml(alts) {
+// opts.admin: muestra los botones para desempatar
+function resultsHtml(alts, opts = {}) {
+  const undecided = alts.some((a) => a.tie) && !alts.some((a) => a.chosen);
   return `<ul class="alts">${alts.map((a) => `
     <li class="alt ${a.winner ? "winner" : ""}">
       <span class="letter">${esc(a.letter)}</span>
-      <span>${esc(a.text)}${a.author ? ` <span class="author">— ${esc(a.author)}</span>` : ""}</span>
+      <span>${esc(a.text)}${a.author ? ` <span class="author">— ${esc(a.author)}</span>` : ""}${a.chosen ? ` <span class="chip ok" title="Elegida para desempatar">🏆 Ganadora</span>` : ""}</span>
       <div class="barrow"><div class="bar"><span style="width:${a.pct}%"></span></div><b>${plural(a.count, "voto", "votos")} · ${a.pct}%</b></div>
-    </li>`).join("")}</ul>`;
+      ${opts.admin && a.tie && !a.chosen ? `<div class="barrow"><button class="btn-sm" data-choose="${a.id}">🏆 Elegir como ganadora</button></div>` : ""}
+    </li>`).join("")}</ul>${undecided ? `<div class="muted-ink" style="margin-top:.4em">⚖️ Empate${opts.admin ? ": elige la ganadora" : ""}</div>` : ""}`;
 }
 function proposersHtml(proposers) {
   if (!proposers.length) return `<div class="empty">Nadie conectado en este rol para proponer</div>`;
@@ -143,7 +150,7 @@ function cardHtml(card, step, opts = {}) {
   }
   if (step === "propose") body += proposersHtml(card.proposers);
   if (card.alternatives.length) {
-    body += hasCounts ? resultsHtml(card.alternatives) : altsHtml(card.alternatives);
+    body += hasCounts ? resultsHtml(card.alternatives, opts) : altsHtml(card.alternatives);
   } else if (["proposed", "vote", "results"].includes(step)) {
     body += `<div class="empty" style="margin-top:.6em">Sin propuestas</div>`;
   }
@@ -177,7 +184,7 @@ function lobbyHtml(d, qrSrc) {
     return `<div class="lobby-role" style="${cssVars(p)}">
       <div class="lobby-role-head">${p.emoji} ${esc(p.name)} <b>${names.length}</b></div>
       <div class="lobby-names">${names.join(" · ") || "<span class='muted'>—</span>"}</div></div>`;
-  }).join("");
+  }).join("") + unassignedHtml(parts);
   return `<div class="lobby">
     <div class="lobby-qr"><img src="${qrSrc}" alt="Código QR para unirse"></div>
     <div class="lobby-info">
@@ -188,6 +195,16 @@ function lobbyHtml(d, qrSrc) {
       <div class="lobby-count">${plural(parts.length, "persona unida", "personas unidas")}</div>
       <div class="lobby-roles">${byRole}</div>
     </div></div>`;
+}
+
+// Participantes que aún no tienen rol asignado
+const NO_ROLE = { name: "Sin rol asignado", emoji: "❔", color: "#64748b", ink: "#ffffff" };
+function unassignedHtml(parts, withOnline = false) {
+  const list = parts.filter((x) => !x.profile);
+  if (!list.length) return "";
+  return `<div class="lobby-role" style="${cssVars(NO_ROLE)}">
+    <div class="lobby-role-head">${NO_ROLE.emoji} ${NO_ROLE.name} <b>${list.length}</b></div>
+    <div class="lobby-names">${list.map((x) => `<span class="${withOnline && !x.online ? "offline" : ""}">${esc(x.name)}</span>`).join(" · ")}</div></div>`;
 }
 
 // Tablero completo: fase arriba, pasos, grilla 2x2, indicadores abajo.
@@ -209,7 +226,7 @@ function boardHtml(d, opts = {}) {
   return `${phasesHtml(s.category)}
     <div class="board-meta">
       <div class="board-title">${s.title ? esc(s.title) : esc(s.category)} <span class="muted">${s.index}/${s.total}</span></div>
-      <div class="board-step">${stepsHtml(d.step)} ${timerHtml(d.deadline)}</div>
+      <div class="board-step">${stepsHtml(d.step)} ${timerHtml(d.deadline, d.paused_ms)}</div>
     </div>
     ${grid}
     ${indicatorsHtml(d.cards)}`;

@@ -24,13 +24,8 @@
           <label for="num_alternatives">Alternativas (personas que proponen por rol)</label>
           <input id="num_alternatives" type="number" name="num_alternatives" min="1" max="{{ MAX_ALTERNATIVES }}" value="{{ slide.num_alternatives if slide else 3 }}">
         </div>
-        <div>
-          <label for="propose_seconds">Tiempo para proponer (segundos)</label>
-          <input id="propose_seconds" type="number" name="propose_seconds" min="5" max="600" value="{{ slide.propose_seconds if slide else 60 }}">
-        </div>
-        <div>
-          <label for="vote_seconds">Tiempo para votar (segundos)</label>
-          <input id="vote_seconds" type="number" name="vote_seconds" min="5" max="600" value="{{ slide.vote_seconds if slide else 60 }}">
+        <div style="grid-column: span 2; align-self: end">
+          <p class="muted small" style="margin:0">Los tiempos de discusión, propuestas y votación se configuran para toda la actividad en el <a href="/admin/a/{{ act.id }}">panel</a>.</p>
         </div>
       </div>
     </section>

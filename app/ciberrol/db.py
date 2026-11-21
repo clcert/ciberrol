@@ -60,6 +60,12 @@ def init_db() -> str:
             conn.execute(text("ALTER TABLE activities ADD COLUMN IF NOT EXISTS split_contexts BOOLEAN NOT NULL DEFAULT true"))
             for p in ("directivo", "comunicacional", "legal", "tecnico"):
                 conn.execute(text(f"ALTER TABLE slides ADD COLUMN IF NOT EXISTS q_{p} TEXT NOT NULL DEFAULT ''"))
+            conn.execute(text("ALTER TABLE activities ADD COLUMN IF NOT EXISTS role_deck JSONB NOT NULL DEFAULT '[]'"))
+            conn.execute(text("ALTER TABLE activities ADD COLUMN IF NOT EXISTS discuss_seconds INTEGER NOT NULL DEFAULT 120"))
+            conn.execute(text("ALTER TABLE activities ADD COLUMN IF NOT EXISTS propose_seconds INTEGER NOT NULL DEFAULT 60"))
+            conn.execute(text("ALTER TABLE activities ADD COLUMN IF NOT EXISTS vote_seconds INTEGER NOT NULL DEFAULT 60"))
+            conn.execute(text("ALTER TABLE activities ADD COLUMN IF NOT EXISTS paused_ms INTEGER"))
+            conn.execute(text("ALTER TABLE proposals ADD COLUMN IF NOT EXISTS chosen BOOLEAN NOT NULL DEFAULT false"))
             conn.execute(text("UPDATE slides SET category = 'Evaluar' WHERE category = 'Aprendizaje'"))
             conn.commit()
             with Session(bind=conn) as db:

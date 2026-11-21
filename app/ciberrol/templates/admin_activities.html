@@ -14,6 +14,12 @@
       Ocultar el nombre de quien propone (en la presentación y los teléfonos)</label>
     <label class="check"><input type="checkbox" name="split_contexts" value="true" form="new-act" checked>
       Mostrar el contexto general solo en la presentación y el texto de cada rol solo en los teléfonos</label>
+    <div class="timers-form" style="margin-top:.6em">
+      <div><label for="na-discuss">⏱️ Discusión (s, 0 = sin contador)</label><input id="na-discuss" type="number" name="discuss_seconds" min="0" max="3600" value="120" form="new-act"></div>
+      <div><label for="na-propose">⏱️ Propuestas (s)</label><input id="na-propose" type="number" name="propose_seconds" min="5" max="3600" value="60" form="new-act"></div>
+      <div><label for="na-vote">⏱️ Votación (s)</label><input id="na-vote" type="number" name="vote_seconds" min="5" max="3600" value="60" form="new-act"></div>
+    </div>
+    <p class="muted small" style="margin-bottom:0">Los tiempos se pueden cambiar después desde el panel de la actividad.</p>
   </section>
 
   <section class="panel">

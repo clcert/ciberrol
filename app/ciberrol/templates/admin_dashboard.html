@@ -45,6 +45,16 @@
 
   <section class="panel">
     <h2>Participantes</h2>
+    <form id="add-person" class="add-person">
+      <input type="text" name="name" maxlength="60" placeholder="Nombre de la persona" required aria-label="Nombre">
+      <select name="profile" aria-label="Rol">
+        <option value="">Rol automático</option>
+        {% for key, p in PROFILES.items() %}<option value="{{ key }}">{{ p.emoji }} {{ p.name }}</option>{% endfor %}
+      </select>
+      <button class="btn-primary" type="submit">＋ Agregar</button>
+    </form>
+    <p class="error small" id="add-person-err"></p>
+    <p class="muted small">⏳ = agregada por ti y aún sin entrar: al unirse desde su teléfono con ese mismo nombre toma ese lugar. ✕ quita a la persona.</p>
     <div class="lobby-roles" id="people"></div>
   </section>
 

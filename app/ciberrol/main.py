@@ -6,6 +6,7 @@ import json
 import os
 import re
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import segno
@@ -146,6 +147,17 @@ def home(request: Request, code: str | None = None):
     return templates.TemplateResponse(request, "home.html", {})
 
 
+NAME_TAKEN = "Ese nombre ya está en uso en esta actividad. Prueba con otro (p. ej. agrega tu apellido)."
+
+
+def _name_owner(db: Session, act: Activity, name: str, exclude: str | None = None) -> Participant | None:
+    """Participante de la actividad con ese nombre (sin distinguir mayúsculas), si existe."""
+    q = select(Participant).where(Participant.activity_id == act.id, func.lower(Participant.name) == name.lower())
+    if exclude:
+        q = q.where(Participant.id != exclude)
+    return db.scalar(q.limit(1))
+
+
 class JoinIn(BaseModel):
     name: str
 
@@ -160,16 +172,13 @@ def join(code: str, body: JoinIn, request: Request, db: Session = Depends(get_db
         raise HTTPException(400, "Escribe tu nombre")
     part = session_participant(request, db, act)
     act = logic.lock_activity(db, act.id)  # serializa los ingresos para no duplicar nombres
-    taken = db.scalar(
-        select(Participant.id).where(
-            Participant.activity_id == act.id,
-            func.lower(Participant.name) == name.lower(),
-            Participant.id != (part.id if part else ""),
-        )
-    )
-    if taken:
+    taken = _name_owner(db, act, name, exclude=part.id if part else None)
+    if taken is not None and taken.pending and part is None:
+        part, taken = taken, None  # el admin lo agregó antes: este teléfono toma ese lugar
+        part.pending = False
+    if taken is not None:
         db.rollback()
-        raise HTTPException(409, "Ese nombre ya está en uso en esta actividad. Prueba con otro (p. ej. agrega tu apellido).")
+        raise HTTPException(409, NAME_TAKEN)
     if part is None:
         part = Participant(id=str(uuid.uuid4()), activity_id=act.id, profile=NO_PROFILE)
         db.add(part)
@@ -430,6 +439,45 @@ def preview(request: Request, activity_id: int, slide_id: int, db: Session = Dep
     act = get_activity(db, activity_id)
     slide = _get_slide(db, activity_id, slide_id)
     return logic.preview_payload(db, act, slide, join_url(request, act))
+
+
+class ParticipantIn(BaseModel):
+    name: str
+    profile: str = ""  # vacío = automático
+
+
+@app.post("/admin/api/a/{activity_id}/participants")
+def add_participant(activity_id: int, body: ParticipantIn, db: Session = Depends(get_db), admin=Depends(require_admin)):
+    get_activity(db, activity_id)
+    act = logic.lock_activity(db, activity_id)
+    name = " ".join(body.name.split())[:60]
+    if not name:
+        db.rollback()
+        raise HTTPException(400, "Escribe un nombre")
+    if body.profile and body.profile not in PROFILES:
+        db.rollback()
+        raise HTTPException(400, "Rol inválido")
+    if _name_owner(db, act, name) is not None:
+        db.rollback()
+        raise HTTPException(409, "Ya hay alguien con ese nombre en esta actividad")
+    profile = body.profile or (logic.next_role(act) if act.status == STATUS_RUNNING else NO_PROFILE)
+    # last_seen antiguo: no cuenta como conectado (no propone ni vota) hasta que entre desde su teléfono
+    db.add(Participant(id=str(uuid.uuid4()), activity_id=act.id, name=name, profile=profile, pending=True,
+                       last_seen=datetime(2000, 1, 1, tzinfo=timezone.utc)))
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/admin/api/a/{activity_id}/participants/{participant_id}/delete")
+def remove_participant(activity_id: int, participant_id: str, db: Session = Depends(get_db), admin=Depends(require_admin)):
+    logic.lock_activity(db, activity_id)
+    part = db.get(Participant, participant_id)
+    if part is None or part.activity_id != activity_id:
+        db.rollback()
+        raise HTTPException(404, "Participante no encontrado")
+    db.delete(part)  # en cascada: sus propuestas (y los votos que recibieron), votos y elegibilidad
+    db.commit()
+    return {"ok": True}
 
 
 class TimersIn(BaseModel):

@@ -76,6 +76,10 @@ Los textos de las diapositivas (contexto, escenarios y preguntas) admiten markdo
 5. **Finalizar ejercicio** → el admin ve por persona: cuántas veces sugirió, no sugirió (le tocó y no escribió),
    su alternativa ganó (empates sin desempatar cuentan), votó y no votó (podía y no lo hizo).
 
+**Participantes (panel):** *＋ Agregar* inscribe a alguien por nombre, con rol fijo o automático. Queda marcado
+⏳ (no propone ni vota) hasta que entra desde su teléfono escribiendo ese mismo nombre, y entonces toma ese lugar.
+*✕* quita a una persona junto con sus propuestas (y los votos que recibieron) y sus votos; puede volver a unirse.
+
 **Temporizador:** durante la discusión, las propuestas o la votación el panel permite **⏸️ Pausar / ▶️ Reanudar**
 y **➕ 15 s**. La presentación y los teléfonos muestran el contador (en pausa aparece ⏸).
 

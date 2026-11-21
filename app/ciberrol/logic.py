@@ -557,7 +557,13 @@ def progress_payload(db: Session, act: Activity) -> dict:
 def participants_list(db: Session, act: Activity) -> list[dict]:
     cutoff = online_cutoff()
     return [
-        {"name": p.name, "profile": p.profile if p.profile in PROFILES else NO_PROFILE, "online": p.last_seen > cutoff}
+        {
+            "id": p.id,
+            "name": p.name,
+            "profile": p.profile if p.profile in PROFILES else NO_PROFILE,
+            "online": p.last_seen > cutoff and not p.pending,
+            "pending": p.pending,
+        }
         for p in db.scalars(
             select(Participant).where(Participant.activity_id == act.id).order_by(Participant.created_at)
         )

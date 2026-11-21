@@ -150,6 +150,8 @@ class Participant(Base):
     profile: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Agregado por el admin y aún sin teléfono: lo toma quien se una con este mismo nombre
+    pending: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
 
 class Proposal(Base):

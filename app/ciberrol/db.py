@@ -65,6 +65,7 @@ def init_db() -> str:
             conn.execute(text("ALTER TABLE activities ADD COLUMN IF NOT EXISTS propose_seconds INTEGER NOT NULL DEFAULT 60"))
             conn.execute(text("ALTER TABLE activities ADD COLUMN IF NOT EXISTS vote_seconds INTEGER NOT NULL DEFAULT 60"))
             conn.execute(text("ALTER TABLE activities ADD COLUMN IF NOT EXISTS paused_ms INTEGER"))
+            conn.execute(text("ALTER TABLE participants ADD COLUMN IF NOT EXISTS pending BOOLEAN NOT NULL DEFAULT false"))
             conn.execute(text("ALTER TABLE proposals ADD COLUMN IF NOT EXISTS chosen BOOLEAN NOT NULL DEFAULT false"))
             conn.execute(text("UPDATE slides SET category = 'Evaluar' WHERE category = 'Aprendizaje'"))
             conn.commit()

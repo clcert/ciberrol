@@ -87,15 +87,42 @@ function renderControls(d) {
     </tr>`).join("");
 }
 
+function personHtml(x) {
+  const cls = x.pending ? "pending" : x.online ? "" : "offline";
+  const tip = x.pending ? "Agregado por el admin: aún no entra desde su teléfono" : x.online ? "Conectado" : "Desconectado";
+  return `<span class="person ${cls}" title="${tip}">${esc(x.name)}${x.pending ? " ⏳" : ""}<button class="person-x" type="button"
+    data-remove="${esc(x.id)}" data-name="${esc(x.name)}" title="Quitar a ${esc(x.name)}" aria-label="Quitar a ${esc(x.name)}">✕</button></span>`;
+}
 function renderPeople(d) {
   const parts = d.participants || [];
-  els.people.innerHTML = d.progress.profiles.map((p) => {
+  const groups = [...d.progress.profiles, { profile: "", ...NO_ROLE }];
+  els.people.innerHTML = groups.map((p) => {
     const list = parts.filter((x) => x.profile === p.profile);
+    if (!p.profile && !list.length) return "";
     return `<div class="lobby-role" style="${cssVars(p)}">
       <div class="lobby-role-head">${p.emoji} ${esc(p.name)} <b>${list.length}</b></div>
-      <div class="lobby-names">${list.map((x) => `<span class="${x.online ? "" : "offline"}">${esc(x.name)}</span>`).join(" · ") || "<span class='muted'>—</span>"}</div>
+      <div class="lobby-names">${list.map(personHtml).join(" ") || "<span class='muted'>—</span>"}</div>
     </div>`;
-  }).join("") + unassignedHtml(parts, true);
+  }).join("");
+}
+
+// ---------- agregar / quitar participantes ----------
+const addForm = document.getElementById("add-person");
+addForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const err = document.getElementById("add-person-err");
+  const r = await postJSON(`/admin/api/a/${ACT}/participants`, { name: addForm.elements.name.value, profile: addForm.elements.profile.value });
+  if (!r.ok) { err.textContent = r.data.detail || "No se pudo agregar"; return; }
+  err.textContent = "";
+  addForm.elements.name.value = "";
+  addForm.elements.name.focus();
+  poller.force();
+});
+async function removePerson(id, name) {
+  if (!confirm(`¿Quitar a ${name} de la actividad?\nSe borrarán sus propuestas (con los votos que recibieron) y sus votos. Podrá volver a unirse desde su teléfono.`)) return;
+  const r = await postJSON(`/admin/api/a/${ACT}/participants/${encodeURIComponent(id)}/delete`);
+  if (!r.ok) alert(r.data.detail || "No se pudo quitar");
+  poller.force();
 }
 
 function render(d) {
@@ -169,6 +196,8 @@ document.addEventListener("click", (e) => {
   if (g) { e.preventDefault(); act("goto", { slide_id: +g.dataset.goto }); }
   const p = e.target.closest("[data-preview]");
   if (p) { e.preventDefault(); openPreview(+p.dataset.preview); }
+  const rm = e.target.closest("[data-remove]");
+  if (rm) { e.preventDefault(); removePerson(rm.dataset.remove, rm.dataset.name); }
   const c = e.target.closest("[data-choose]");
   if (c && !c.disabled) {
     e.preventDefault();
